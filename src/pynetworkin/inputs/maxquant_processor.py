@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -120,6 +121,13 @@ class MaxQuantProcessor:
     _RE_REFSEQ_VERSION = re.compile(r"\.\d+$")
 
     def __init__(self, rate_limit_delay: float = 0.1) -> None:
+        if rate_limit_delay != 0.1:
+            warnings.warn(
+                "rate_limit_delay is deprecated and has no effect; "
+                "ProtMapper handles rate limiting internally.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         self._mapper = ProtMapper()
 
     # ------------------------------------------------------------------

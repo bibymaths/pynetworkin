@@ -205,8 +205,7 @@ class TestProcessSiteTable:
         p = tmp_path / "bad.txt"
         p.write_text("Other\tColumns\nA\tB\n", encoding="utf-8")
 
-        with patch.object(processor, "fetch_sequences_from_uniprot", return_value={}) as m:
-            m.return_value = {}
+        with patch.object(processor, "fetch_sequences_from_uniprot", return_value={}):
             result = processor.process_site_table(input_file=p, output_dir=tmp_path / "out")
 
         report = result["report"]

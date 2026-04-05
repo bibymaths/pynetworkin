@@ -78,13 +78,6 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') }}
 
-      - name: Upload to Zenodo
-        uses: megasanjay/upload-to-zenodo@v2.0.1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          zenodo_token: ${{ secrets.ZENODO_TOKEN }}
-          deposition_id: ${{ secrets.ZENODO_DEPOSITION_ID }}
-
       - name: Report completion
         run: |
           echo "PyPI publish, Docker Hub push, GitHub Release, and Zenodo deposit completed for ${GITHUB_REF_NAME}"

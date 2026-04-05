@@ -1,3 +1,0 @@
-Name	Position	Tree	Motif Group	Kinase/Phosphatase/Phospho-binding domain	NetworKIN score	Motif probability	STRING score	Target STRING ID	Kinase STRING ID	Target Name	Kinase Name	Target description	Kinase description	Peptide sequence window	Intermediate nodes	recovered	recovery_method
-ENSP00000005260	S14	KIN	PKC_group	PKCbeta	2.4948	0.3915	0.0501	ENSP00000005260	ENSP00000305355	ENSP00000005260	ENSP00000305355	BAI1-associated protein 2-like 1	protein kinase C, beta	NRLTEsTYRNV	ENSP00000314458	False	
-ENSP00000005260	S14	KIN	PKC_group	PKCalpha	2.4219	0.3915	0.0808	ENSP00000005260	ENSP00000284384	ENSP00000005260	ENSP00000284384	BAI1-associated protein 2-like 1	protein kinase C, alpha	NRLTEsTYRNV	ENSP00000314458	False	

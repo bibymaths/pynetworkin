@@ -4,6 +4,7 @@ import gzip
 import os
 import platform
 import re
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -21,7 +22,6 @@ from inputs.phosphosites import fetch_phosphosite
 from inputs.string_network import fetch_string_network
 from output import write_output
 from recovery import recover_false_negatives
-
 
 ALPHAS = {"9606": 0.85, "4932": 0.65}
 SPECIES_NAME = {"9606": "human", "4932": "yeast"}
@@ -124,7 +124,13 @@ def ensure_dirs(*paths: str) -> None:
 
 
 def run_command(cmd: str) -> str:
-    command = f'wsl bash -c "{cmd}"' if platform.system() == "Windows" else cmd
+    # Use bash explicitly with pipefail so downstream pipe tools (like sort) don't swallow blastp's failure exit code
+    cmd_with_pipefail = f"set -o pipefail; {cmd}"
+    if platform.system() == "Windows":
+        command = f'wsl bash -c "{cmd_with_pipefail}"'
+    else:
+        command = f"bash -c '{cmd_with_pipefail}'"
+
     logger.muted("Executing command: {}", command)
 
     try:
@@ -268,7 +274,8 @@ def read_group_to_domain_map(default_path: str) -> dict[str, dict[str, list[str]
     return mapping
 
 
-def read_alias_files(organism: str, datadir: str, map_group_to_domain: dict[str, dict[str, list[str]]]) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]]]:
+def read_alias_files(organism: str, datadir: str, map_group_to_domain: dict[str, dict[str, list[str]]]) -> tuple[
+    dict[str, str], dict[str, str], dict[str, list[str]]]:
     alias_hash: dict[str, str] = {}
     desc_hash: dict[str, str] = {}
     name_hash: dict[str, list[str]] = {}
@@ -311,7 +318,8 @@ def read_alias_files(organism: str, datadir: str, map_group_to_domain: dict[str,
     return alias_hash, desc_hash, name_hash
 
 
-def map_peptides_to_string(config: AppConfig, id_pos_res: dict[str, dict[int, str]], id_seq: dict[str, str]) -> tuple[dict[str, dict[str, bool]], dict[str, dict[str, bool]]]:
+def map_peptides_to_string(config: AppConfig, id_pos_res: dict[str, dict[int, str]], id_seq: dict[str, str]) -> tuple[
+    dict[str, dict[str, bool]], dict[str, dict[str, bool]]]:
     logger.header("Mapping query proteins to STRING IDs via BLAST")
     incoming2string: dict[str, dict[str, bool]] = {}
     string2incoming: dict[str, dict[str, bool]] = {}
@@ -327,16 +335,34 @@ def map_peptides_to_string(config: AppConfig, id_pos_res: dict[str, dict[int, st
         query_path = blast_tmpfile.name
 
     blast_db = os.path.join(config.datadir, f"{config.organism}.protein.sequences.v12.0.fa")
+
+    # --- BLAST PATH RESOLUTION ---
+    resolved_blast_dir = config.blast_dir or os.environ.get("BLAST_PATH", "")
+    blastp_exe = "blastp"
+    makeblastdb_exe = "makeblastdb"
+
+    if resolved_blast_dir:
+        test_blastp = os.path.join(resolved_blast_dir, "blastp")
+        # Check if the file actually exists and is executable
+        if os.path.isfile(test_blastp) and os.access(test_blastp, os.X_OK):
+            blastp_exe = test_blastp
+            makeblastdb_exe = os.path.join(resolved_blast_dir, "makeblastdb")
+        else:
+            logger.warning("blastp not found in '{}'. Falling back to system PATH.", resolved_blast_dir)
+
+    # Final safety check: does blastp exist in the system at all?
+    if not shutil.which(blastp_exe):
+        raise CommandError(
+            "blastp is not installed or not found in system PATH. Please install NCBI BLAST+ (e.g., sudo apt-get install ncbi-blast+)")
+
     if not os.path.isfile(blast_db + ".pin"):
-        makeblastdb = f"{config.blast_dir.rsplit('/', 1)[0]}/makeblastdb"
-        command = f"{makeblastdb} -in {blast_db} -out {blast_db} -parse_seqids -dbtype prot"
+        command = f'{makeblastdb_exe} -in "{blast_db}" -out "{blast_db}" -parse_seqids -dbtype prot'
         logger.warning("BLAST DB missing. Initializing database.")
         run_command(command)
 
-    blastp = f"{config.blast_dir}blastp"
     command = (
-        f"{blastp} -num_threads {config.threads} -evalue 1e-10 "
-        f"-db {blast_db} -query {query_path} -outfmt 6 | sort -k12gr"
+        f'{blastp_exe} -num_threads {config.threads} -evalue 1e-10 '
+        f'-db "{blast_db}" -query "{query_path}" -outfmt 6 | sort -k12gr'
     )
 
     if config.fast and os.path.isfile(config.blast_output_path):
@@ -375,7 +401,8 @@ def map_peptides_to_string(config: AppConfig, id_pos_res: dict[str, dict[int, st
     return incoming2string, string2incoming
 
 
-def load_string_data(config: AppConfig, string2incoming: dict[str, dict[str, bool]], alias_hash: dict[str, str]) -> dict[str, dict[str, dict[str, Any]]]:
+def load_string_data(config: AppConfig, string2incoming: dict[str, dict[str, bool]], alias_hash: dict[str, str]) -> \
+dict[str, dict[str, dict[str, Any]]]:
     fn_bestpath = os.path.join(config.datadir, "string_data", f"{config.organism}.bestpath_0340_0950.v9.tsv.gz")
     if not os.path.isfile(fn_bestpath):
         raise NetworkinError(f"Best path file missing: {fn_bestpath}")
@@ -407,7 +434,8 @@ def load_string_data(config: AppConfig, string2incoming: dict[str, dict[str, boo
     return tree_pred_string_data
 
 
-def _parse_string_line(tokens: list[str], organism: str, alias_hash: dict[str, str]) -> tuple[str, str, str, float, float, str] | None:
+def _parse_string_line(tokens: list[str], organism: str, alias_hash: dict[str, str]) -> tuple[
+                                                                                            str, str, str, float, float, str] | None:
     if len(tokens) == 8:
         tree, group, name, string1, string2, s_direct, s_indirect, path = tokens
         return name, string1, string2, float(s_direct), float(s_indirect), path
@@ -450,7 +478,8 @@ def load_conversion_tables(dir_path: str, species: str, verbose: bool = False) -
     return tables
 
 
-def filter_and_rank_predictions(predictions: list[dict[str, Any]], min_networkin: float = 2.0, min_motif: float = 0.05, top_k: int = 5) -> list[dict[str, Any]]:
+def filter_and_rank_predictions(predictions: list[dict[str, Any]], min_networkin: float = 2.0, min_motif: float = 0.05,
+                                top_k: int = 5) -> list[dict[str, Any]]:
     df = pd.DataFrame(predictions)
     if df.empty:
         logger.warning("No predictions available after scoring")
@@ -475,23 +504,23 @@ def _select_conversion_tables(dlr: dict[str, Any], species: str, tree: str, name
 
 
 def build_prediction_row(
-    target_id: str,
-    pos: int,
-    residue: str,
-    tree: str,
-    pred: str,
-    name: str,
-    peptide: str,
-    motif_score: float,
-    string1: str,
-    string2: str,
-    string_score: float,
-    path: str,
-    networkin_score: float,
-    string_alias: dict[str, str],
-    string_desc: dict[str, str],
-    recovered: bool = False,
-    recovery_method: str = "",
+        target_id: str,
+        pos: int,
+        residue: str,
+        tree: str,
+        pred: str,
+        name: str,
+        peptide: str,
+        motif_score: float,
+        string1: str,
+        string2: str,
+        string_score: float,
+        path: str,
+        networkin_score: float,
+        string_alias: dict[str, str],
+        string_desc: dict[str, str],
+        recovered: bool = False,
+        recovery_method: str = "",
 ) -> dict[str, Any]:
     return {
         "Name": target_id,
@@ -516,15 +545,15 @@ def build_prediction_row(
 
 
 def compile_predictions(
-    config: AppConfig,
-    id_pos_tree_pred: dict[str, Any],
-    tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
-    incoming2string: dict[str, dict[str, bool]],
-    string_alias: dict[str, str],
-    string_desc: dict[str, str],
-    map_group_to_domain: dict[str, dict[str, list[str]]],
-    likelihood_dir: str,
-    fasta_path: str,
+        config: AppConfig,
+        id_pos_tree_pred: dict[str, Any],
+        tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
+        incoming2string: dict[str, dict[str, bool]],
+        string_alias: dict[str, str],
+        string_desc: dict[str, str],
+        map_group_to_domain: dict[str, dict[str, list[str]]],
+        likelihood_dir: str,
+        fasta_path: str,
 ) -> tuple[list[dict[str, Any]], PredictionStats]:
     stats = PredictionStats()
     predictions: list[dict[str, Any]] = []
@@ -559,7 +588,8 @@ def compile_predictions(
                                 if not config.string_for_uncovered:
                                     continue
                                 motif_likelihood = 1.0
-                                if config.species_name == "human" and tree in ["1433", "BRCT", "WW", "PTB", "WD40", "FHA"]:
+                                if config.species_name == "human" and tree in ["1433", "BRCT", "WW", "PTB", "WD40",
+                                                                               "FHA"]:
                                     string_tbl = conversion_tables[config.species_name]["SH2"]["general"]["string"]
                                 else:
                                     string_tbl = conversion_tables[config.species_name][tree]["general"]["string"]
@@ -567,7 +597,8 @@ def compile_predictions(
                                 networkin_score = motif_likelihood * string_likelihood
                                 stats.uncovered_branch_hits += 1
                             else:
-                                motif_tbl, string_tbl = _select_conversion_tables(conversion_tables, config.species_name, tree, name)
+                                motif_tbl, string_tbl = _select_conversion_tables(conversion_tables,
+                                                                                  config.species_name, tree, name)
                                 motif_likelihood = ConvertScore2L(motif_score, motif_tbl)
                                 string_likelihood = ConvertScore2L(string_score, string_tbl)
                                 networkin_score = motif_likelihood * string_likelihood
@@ -604,11 +635,11 @@ def compile_predictions(
 
 
 def recover_predictions(
-    id_pos_tree_pred: dict[str, Any],
-    incoming2string: dict[str, dict[str, bool]],
-    tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
-    string_alias: dict[str, str],
-    string_desc: dict[str, str],
+        id_pos_tree_pred: dict[str, Any],
+        incoming2string: dict[str, dict[str, bool]],
+        tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
+        string_alias: dict[str, str],
+        string_desc: dict[str, str],
 ) -> list[dict[str, Any]]:
     motif_score_dict: dict[tuple[str, str], float] = {}
     for prot_id, pos_data in id_pos_tree_pred.items():
@@ -696,7 +727,8 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         if file_type == NETWORKIN_SITE_FILE:
             id_pos_res = read_networkin_sites(config.sites_path)
         else:
-            raise NetworkinError("Only the basic Networkin site reader was migrated in this core refactor. Add the other adapters next.")
+            raise NetworkinError(
+                "Only the basic Networkin site reader was migrated in this core refactor. Add the other adapters next.")
     else:
         id_pos_res = {}
         logger.info("No sites file supplied; downstream scorer must enumerate all candidate S/T/Y sites")

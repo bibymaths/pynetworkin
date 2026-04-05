@@ -33,8 +33,8 @@ CACHE_TTL_DAYS = 7
 
 # Full human STRING v12.0 flat file — downloaded at runtime when needed.
 STRING_FULL_DOWNLOAD_URL = (
-    "https://stringdb-downloads.org/download/protein.links.v12.0"
-    "/9606.protein.links.v12.0.txt.gz"
+    "https://stringdb-downloads.org/download/"
+    "protein.links.v12.0/9606.protein.links.v12.0.txt.gz"
 )
 _STRING_CACHE_FILENAME = "9606.protein.links.v12.0.txt.gz"
 _STRING_DOWNLOAD_TIMEOUT = 300  # seconds
@@ -278,8 +278,6 @@ def fetch_string_network(
         if not df.empty:
             df.to_parquet(cache, index=False)
             return df
-    except (FileNotFoundError, RuntimeError):
-        pass  # fall through to REST API
     except Exception:
         pass  # fall through to REST API
 

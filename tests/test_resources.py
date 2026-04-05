@@ -185,9 +185,6 @@ def test_fetch_string_network_falls_back_to_bundled_on_all_failures(tmp_path: Pa
         "NETWORKIN_STRING_FLAT_FILE": "",
     }
 
-    def raise_runtime(*_a, **_kw):
-        raise RuntimeError("download failed")
-
     with patch.dict(os.environ, env, clear=False):
         with patch.object(sn, "_resolve_flat_file", side_effect=RuntimeError("no file")):
             with patch.object(sn, "_fetch_rest_api", side_effect=RuntimeError("no api")):

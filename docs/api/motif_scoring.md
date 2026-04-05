@@ -1,3 +1,3 @@
 # Motif Scoring
 
-::: motif_scoring
+::: pynetworkin.motif_scoring

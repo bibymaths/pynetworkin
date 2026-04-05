@@ -9,14 +9,13 @@ kinase–substrate prediction pipeline.
 
 1. [Requirements](#1-requirements)
 2. [Installation](#2-installation)
-3. [Database setup](#3-database-setup)
-4. [Data sources](#4-data-sources)
-5. [Minimal offline run](#5-minimal-offline-run)
-6. [Full run with live data](#6-full-run-with-live-data)
-7. [Output options](#7-output-options)
-8. [Testing](#8-testing)
-9. [Troubleshooting](#9-troubleshooting)
-10. [Directory structure](#10-directory-structure)
+3. [Data sources](#3-data-sources)
+4. [Minimal offline run](#4-minimal-offline-run)
+5. [Full run with live data](#5-full-run-with-live-data)
+6. [Output options](#6-output-options)
+7. [Testing](#7-testing)
+8. [Troubleshooting](#8-troubleshooting)
+9. [Directory structure](#9-directory-structure)
 
 ---
 
@@ -26,8 +25,6 @@ kinase–substrate prediction pipeline.
 |---|---|---|
 | Python | 3.10 | Type-union syntax (`X \| Y`) used throughout |
 | BLAST+ | any | `makeblastdb` and `blastp` must be on `$PATH` |
-| SQLite **or** PostgreSQL | SQLite 3.x / PG 13+ | SQLite is fine for development |
-| (Optional) Numba | 0.57+ | JIT-compiled recovery step; auto-disabled if absent |
 
 ---
 
@@ -45,37 +42,11 @@ source .venv/bin/activate          # Linux / macOS
 
 # Install the package with development dependencies
 pip install -e ".[dev]"
-
-# Copy environment template
-cp .env.example .env
-# Edit .env and set NETWORKIN_DATABASE_URL (at minimum)
 ```
 
 ---
 
-## 3. Database setup
-
-NetworKIN uses Alembic for schema migrations.
-
-### SQLite (development)
-
-```bash
-export NETWORKIN_DATABASE_URL="sqlite:///./dev.db"
-alembic upgrade head
-```
-
-### PostgreSQL (production)
-
-```bash
-export NETWORKIN_DATABASE_URL="postgresql://user:password@localhost:5432/networkin"
-alembic upgrade head
-```
-
-> **Tip:** Store these in your `.env` file and `source .env` before running.
-
----
-
-## 4. Data sources
+## 3. Data sources
 
 ### Phosphorylation sites (priority order)
 
@@ -112,9 +83,9 @@ No external files need to be downloaded — the package bundles all model data.
 
 ---
 
-## 5. Minimal offline run
+## 4. Minimal offline run
 
-This run uses only bundled data and requires no internet access or database.
+This run uses only bundled data and requires no internet access.
 
 ```bash
 pynetworkin predict data/fallback/test_input.fasta \
@@ -126,7 +97,7 @@ sources are unavailable.
 
 ---
 
-## 6. Full run with live data
+## 5. Full run with live data
 
 ```bash
 # Force re-download of all live data (OmniPath + STRING)
@@ -161,7 +132,7 @@ pynetworkin predict proteome.fasta \
 
 ---
 
-## 7. Output options
+## 6. Output options
 
 ### TSV (default)
 
@@ -192,7 +163,7 @@ the proteins are close in the interaction network.
 
 ---
 
-## 8. Testing
+## 7. Testing
 
 ```bash
 # Run all tests with coverage
@@ -216,45 +187,51 @@ python scripts/generate_sample_data.py
 
 ---
 
-## 9. Troubleshooting
+## 8. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `NETWORKIN_DATABASE_URL is not set` | Missing env var | Run `export NETWORKIN_DATABASE_URL=sqlite:///./dev.db` |
-| `alembic: command not found` | Alembic not installed | Run `pip install -e ".[dev]"` |
 | `OmniPath fetch failed` | No internet / OmniPath down | Pipeline falls back to local PSP file, then bundled TSV automatically |
 | `STRING flat file not found` | Flat file missing or wrong path | Check `data/string_data/9606.links.v12.0.tsv.gz` exists; set `NETWORKIN_STRING_FLAT_FILE` if needed |
-| Empty results (`0 predictions`) | All kinase scores below threshold, or empty FASTA | Check FASTA has ≥1 S/T/Y residue per protein; lower `--threshold` |
-| Slow first run | Numba JIT compilation | Normal; subsequent runs are fast.  Set `NUMBA_DISABLE_JIT=1` to skip JIT |
+| Empty results (`0 predictions`) | All kinase scores below threshold, or empty FASTA | Check FASTA has ≥1 S/T/Y residue per protein |
 | `BLAST not found` | `blastp` not on PATH | Install BLAST+: `sudo apt install ncbi-blast+` or `conda install -c bioconda blast` |
 | `ModuleNotFoundError: pynetphorest` | Package not installed | Run `pip install -e ".[dev]"` |
-| `KeyError: 'motif'` | Old conversion table format | Check `data/likelihood_conversion_table_direct/` contains the expected `.txt` files |
+| `KeyError: 'motif'` | Missing or corrupt Parquet conversion table | Check `data/conversion_direct.parquet` and `data/conversion_indirect.parquet` exist; run `python scripts/migrate_to_parquet.py` to regenerate |
 
 ---
 
-## 10. Directory structure
+## 9. Directory structure
 
 ```
 pynetworkin/
-├── NetworKIN.py                 # Main orchestration script & CLI entry point
-├── cli/                         # CLI entry-point (pynetworkin predict …)
-├── inputs/
-│   ├── phosphosites.py          # Phosphosite fetching (OmniPath → PSP → fallback)
-│   └── string_network.py        # STRING network (flat file → REST → fallback)
+├── src/pynetworkin/             # Core pipeline package
+│   ├── cli.py                   # CLI entry-point (pynetworkin predict …)
+│   ├── networkin.py             # Pipeline orchestration, site-file parsers
+│   ├── motif_scoring.py         # pynetphorest batch scorer
+│   ├── graph_scoring.py         # STRING context scoring and ranking
+│   ├── likelihood.py            # Bayesian likelihood conversion tables
+│   ├── output.py                # TSV / Cytoscape output writers
+│   ├── recovery.py              # False-negative recovery
+│   └── inputs/
+│       ├── phosphosites.py      # Phosphosite fetching (OmniPath → PSP → fallback)
+│       ├── string_network.py    # STRING network (flat file → REST → fallback)
+│       └── maxquant_processor.py # MaxQuant site-table pre-processor
 ├── data/
 │   ├── fallback/                # Bundled offline data (always present)
 │   │   ├── phosphosites_sample.tsv
 │   │   ├── string_sample.tsv
 │   │   └── test_input.fasta
-│   ├── string_data/             # STRING v12 flat files (large; not in git LFS)
+│   ├── string_data/             # STRING v12 flat files
 │   │   └── 9606.links.v12.0.tsv.gz
-│   ├── likelihood_conversion_table_direct/   # Per-kinase score→likelihood tables
-│   └── 9606.protein.sequences.v12.0.fa      # Human proteome FASTA (BLAST DB)
+│   ├── conversion_direct.parquet    # Likelihood tables (direct paths)
+│   ├── conversion_indirect.parquet  # Likelihood tables (indirect paths)
+│   └── 9606.protein.sequences.v12.0.fa  # Human proteome FASTA (BLAST DB)
 ├── tests/                       # pytest test suite
 ├── scripts/
-│   └── generate_sample_data.py  # Regenerate data/fallback/ from live sources
-├── legacy_c/                    # Archived C source & headers (not compiled)
-├── legacy_web/                  # Archived Perl scripts & shell batch runners
+│   ├── backup.py                # Legacy NetworKIN 3.0 reference (not executed)
+│   ├── cleanup_HGNC_mapping.py  # HGNC symbol reconciliation utility
+│   ├── generate_sample_data.py  # Regenerate data/fallback/ from live sources
+│   └── migrate_to_parquet.py    # Migrate legacy .txt conversion tables → Parquet
 ├── .env.example                 # Environment variable template
 ├── requirements.txt             # Runtime dependencies
 ├── NON_CODE_AUDIT.md            # Non-Python file inventory & decisions

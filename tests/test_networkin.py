@@ -21,7 +21,7 @@ from pynetworkin.networkin import (
     MS_MCMC_FILE,
     NETWORKIN_SITE_FILE,
     PROTEOME_DISCOVERER_SITE_FILE,
-    RUNES_SITE_FILE,
+    LEGACY_SITE_FILE,
     AppConfig,
     NetworkinError,
     detect_site_file_type,
@@ -184,12 +184,12 @@ def test_detect_maxquant_file(tmp_path: Path) -> None:
     assert detect_site_file_type(path) == MAX_QUANT_DIRECT_OUTPUT_FILE
 
 
-def test_detect_runes_site_file(tmp_path: Path) -> None:
-    """Space-separated line with >3 tokens where tokens[1]=='phospho' → RUNES_SITE_FILE."""
+def test_detect_legacy_site_file(tmp_path: Path) -> None:
+    """Space-separated line with >3 tokens where tokens[1]=='phospho' → LEGACY_SITE_FILE."""
     # Must be space-separated (not tab) and have >3 tokens so it doesn't
     # match the len==3 NETWORKIN_SITE_FILE branch first.
     path = _write_site_file("P12345 phospho S42 extra_column\n")
-    assert detect_site_file_type(path) == RUNES_SITE_FILE
+    assert detect_site_file_type(path) == LEGACY_SITE_FILE
 
 
 def test_detect_ms_mcmc_file(tmp_path: Path) -> None:

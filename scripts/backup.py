@@ -46,7 +46,7 @@ dPenalty = {
 NETWORKIN_SITE_FILE = 1
 PROTEOME_DISCOVERER_SITE_FILE = 2
 MAX_QUANT_DIRECT_OUTPUT_FILE = 3
-RUNES_SITE_FILE = 4
+LEGACY_SITE_FILE = 4
 MS_MCMC_FILE = 5
 
 global options
@@ -607,10 +607,10 @@ def InsertValueIntoMultiLevelDict(d, keys, value):
 
 def ReadGroup2DomainMap(path_group2domain_map):
     map_group2domain = {}
-    use_hannos = True
+    use_curated = True
 
-    if use_hannos:
-        with open("data/hanno_group_human_protein_name_map.tsv", "r") as f:
+    if use_curated:
+        with open("data/group_human_protein_name_map_curated.tsv", "r") as f:
             for line in f.readlines():
                 tokens = line.split()
                 name = tokens[3]
@@ -948,7 +948,7 @@ def Main():
             id_pos_res = readPhosphoSitesProteomeDiscoverer(fn_fasta, sitesfile)
         elif input_type == MAX_QUANT_DIRECT_OUTPUT_FILE:
             id_pos_res = readPhosphoSitesMaxQuant(sitesfile)
-        elif input_type == RUNES_SITE_FILE:
+        elif input_type == LEGACY_SITE_FILE:
             id_pos_res = readRunessitesfile(sitesfile)
         elif input_type == MS_MCMC_FILE:
             id_pos_res = readMCMCssitesfile(sitesfile)

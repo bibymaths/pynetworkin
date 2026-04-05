@@ -45,7 +45,10 @@ dependencies = [
 ]
 
 [project.scripts]
-pynetworkin = "cli:app"
+pynetworkin = "pynetworkin.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pynetworkin"]
 
 [project.urls]
 Homepage = "https://github.com/bibymaths/pynetworkin"

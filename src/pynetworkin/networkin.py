@@ -23,6 +23,7 @@ from pynetworkin.graph_scoring import filter_and_rank_predictions
 from pynetworkin.motif_scoring import score_sequences
 from pynetworkin.output import write_output
 from pynetworkin.recovery import recover_false_negatives
+from pynetworkin.resources import conversion_parquet_path
 
 ALPHAS = {"9606": 0.85, "4932": 0.65}
 SPECIES_NAME = {"9606": "human", "4932": "yeast"}
@@ -919,24 +920,18 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
     logger.info("Running motif scorer")
     id_pos_tree_pred = score_sequences(id_seq, id_pos_res)
 
-    likelihood_path = os.path.join(
-        config.datadir,
-        "conversion_direct.parquet"
-        if config.path_mode == "direct"
-        else "conversion_indirect.parquet",
-    )
-
-    predictions, stats = compile_predictions(
-        config=config,
-        id_pos_tree_pred=id_pos_tree_pred,
-        tree_pred_string_data=tree_pred_string_data,
-        incoming2string=incoming2string,
-        string_alias=string_alias,
-        string_desc=string_desc,
-        map_group_to_domain=map_group_to_domain,
-        likelihood_path=likelihood_path,
-        fasta_path=config.fasta_path,
-    )
+    with conversion_parquet_path(config.path_mode) as likelihood_path:
+        predictions, stats = compile_predictions(
+            config=config,
+            id_pos_tree_pred=id_pos_tree_pred,
+            tree_pred_string_data=tree_pred_string_data,
+            incoming2string=incoming2string,
+            string_alias=string_alias,
+            string_desc=string_desc,
+            map_group_to_domain=map_group_to_domain,
+            likelihood_path=str(likelihood_path),
+            fasta_path=config.fasta_path,
+        )
 
     predictions.extend(
         recover_predictions(

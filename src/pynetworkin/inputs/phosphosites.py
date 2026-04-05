@@ -6,12 +6,12 @@
 #   2. Local PhosphoSitePlus export — download manually from
 #      https://www.phosphosite.org/downloads/ and set
 #      NETWORKIN_PSP_LOCAL_FILE=/path/to/Phosphorylation_site_dataset.tsv
-#   3. Bundled fallback TSV — data/fallback/phosphosites_sample.tsv
+#   3. Bundled fallback TSV — pynetworkin/data/fallback/phosphosites_sample.tsv
 #
 # NOTE: Phospho.ELM has been removed — the server is no longer maintained.
 # NOTE: Fetching PhosphoSitePlus directly requires login; use a local copy instead.
 #
-# Cache: Parquet files in .cache/ at the repo root, refreshed if older than 7 days.
+# Cache: Parquet files in .cache/, refreshed if older than 7 days.
 # Trigger refresh with: refresh=True argument or --refresh CLI flag.
 
 import io
@@ -22,15 +22,13 @@ from pathlib import Path
 import httpx
 import pandas as pd
 
+from pynetworkin.resources import open_fallback_phosphosites
+
 CACHE_DIR = Path(os.environ.get("NETWORKIN_CACHE_DIR", ".cache"))
 CACHE_DIR.mkdir(exist_ok=True)
 
 # OmniPath enzyme–substrate (kinase–substrate) endpoint — no auth needed.
 OMNIPATH_ENZSUB_URL = "https://omnipathdb.org/enzsub"
-
-# Bundled offline fallback (always present in the repository).
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-FALLBACK_TSV = _REPO_ROOT / "data" / "fallback" / "phosphosites_sample.tsv"
 
 CACHE_TTL_DAYS = 7
 
@@ -51,10 +49,12 @@ def _cache_valid(path: Path) -> bool:
 
 def _load_fallback() -> pd.DataFrame:
     """Return the bundled phosphosite sample as a last resort."""
-    if FALLBACK_TSV.exists():
-        return pd.read_csv(FALLBACK_TSV, sep="\t", low_memory=False)
-    # Absolute minimum: empty frame with correct columns.
-    return pd.DataFrame(columns=OUTPUT_COLUMNS)
+    try:
+        with open_fallback_phosphosites() as fh:
+            return pd.read_csv(fh, sep="\t", low_memory=False)
+    except Exception:
+        # Absolute minimum: empty frame with correct columns.
+        return pd.DataFrame(columns=OUTPUT_COLUMNS)
 
 
 def _fetch_omnipath() -> pd.DataFrame:

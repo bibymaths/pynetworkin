@@ -99,7 +99,9 @@ def predict(
             final_output = output.expanduser().resolve()
 
             if output_format not in {"tsv", "sif", "cytoscape"}:
-                raise ValueError(f"Unsupported output format: {output_format!r}. Use tsv, cytoscape, or sif.")
+                raise ValueError(
+                    f"Unsupported output format: {output_format!r}. Use tsv, cytoscape, or sif."
+                )
 
             progress.update(task, description="Preparing configuration")
 
@@ -199,8 +201,8 @@ def predict(
             else:
                 motif_scored = _write_sif_from_tsv(raw_tsv, final_output)
             results = {
-                "total": total_predictions-1,
-                "motif_scored": motif_scored-1,
+                "total": total_predictions - 1,
+                "motif_scored": motif_scored - 1,
                 "recovered": recovered_predictions,
                 "output_file": str(final_output),
             }

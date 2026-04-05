@@ -354,7 +354,8 @@ def ReadConversionTableFromMemory(raw_data: str) -> list:
     Args:
         raw_data: Full file content as a string (header + data rows).
 
-    Returns:
+    Returns
+    -------
         list[CConvEntry] sorted by score descending.
     """
     conv_tbl = []

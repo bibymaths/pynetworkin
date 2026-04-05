@@ -12,6 +12,7 @@
 #
 # Cache: Parquet files in .cache/, refreshed if older than 7 days.
 
+import contextlib
 import os
 import tempfile
 from datetime import date, timedelta
@@ -33,8 +34,7 @@ CACHE_TTL_DAYS = 7
 
 # Full human STRING v12.0 flat file — downloaded at runtime when needed.
 STRING_FULL_DOWNLOAD_URL = (
-    "https://stringdb-downloads.org/download/"
-    "protein.links.v12.0/9606.protein.links.v12.0.txt.gz"
+    "https://stringdb-downloads.org/download/protein.links.v12.0/9606.protein.links.v12.0.txt.gz"
 )
 _STRING_CACHE_FILENAME = "9606.protein.links.v12.0.txt.gz"
 _STRING_DOWNLOAD_TIMEOUT = 300  # seconds
@@ -105,10 +105,8 @@ def _download_string_flat_file() -> Path:
                         tmp_fh.write(chunk)
                 Path(tmp_path).replace(dest)
             except Exception:
-                try:
+                with contextlib.suppress(OSError):
                     Path(tmp_path).unlink(missing_ok=True)
-                except OSError:
-                    pass
                 raise
     except httpx.HTTPError as exc:
         raise RuntimeError(

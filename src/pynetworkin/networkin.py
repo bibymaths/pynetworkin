@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import glob
 import gzip
 import os
 import platform
@@ -15,11 +14,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from pynetworkin.graph_scoring import filter_and_rank_predictions
 from pynetworkin.inputs.phosphosites import fetch_phosphosite
 from pynetworkin.inputs.string_network import fetch_string_network
-from pynetworkin.likelihood import ConvertScore2L, ReadConversionTableBin, ReadConversionTableFromMemory
+from pynetworkin.likelihood import ConvertScore2L, ReadConversionTableFromMemory
 from pynetworkin.logger import logger
-from pynetworkin.graph_scoring import filter_and_rank_predictions
 from pynetworkin.motif_scoring import score_sequences
 from pynetworkin.output import write_output
 from pynetworkin.recovery import recover_false_negatives
@@ -205,8 +204,10 @@ def detect_site_file_type(path: str) -> int:
         return NETWORKIN_SITE_FILE
     if len(tokens) == 2:
         return PROTEOME_DISCOVERER_SITE_FILE
-    if len(tokens) > 4 and tokens[0] == "Proteins" and (
-        tokens[4] == "Leading" or (len(tokens) > 2 and tokens[2].startswith("Leading"))
+    if (
+        len(tokens) > 4
+        and tokens[0] == "Proteins"
+        and (tokens[4] == "Leading" or (len(tokens) > 2 and tokens[2].startswith("Leading")))
     ):
         return MAX_QUANT_DIRECT_OUTPUT_FILE
     if len(tokens) > 1 and tokens[1] == "phospho":
@@ -315,9 +316,7 @@ def read_max_quant_sites(path: str) -> dict[str, dict[int, str]]:
             prot_idx = headers.index("Proteins")
             pos_idx = headers.index("Positions within proteins")
         except ValueError as exc:
-            raise NetworkinError(
-                f"MaxQuant file is missing a required column: {exc}"
-            ) from exc
+            raise NetworkinError(f"MaxQuant file is missing a required column: {exc}") from exc
 
         try:
             res_idx: int | None = headers.index("Amino acid")
@@ -341,7 +340,7 @@ def read_max_quant_sites(path: str) -> dict[str, dict[int, str]]:
                 else ""
             )
 
-            for prot, pos_str in zip(proteins, positions):
+            for prot, pos_str in zip(proteins, positions, strict=False):
                 prot = prot.strip()
                 pos_str = pos_str.strip()
                 if not prot or not pos_str:
@@ -349,9 +348,7 @@ def read_max_quant_sites(path: str) -> dict[str, dict[int, str]]:
                 try:
                     pos = int(pos_str)
                 except ValueError:
-                    logger.warning(
-                        "Invalid position '{}' at line {} in {}", pos_str, line_no, path
-                    )
+                    logger.warning("Invalid position '{}' at line {} in {}", pos_str, line_no, path)
                     continue
                 id_pos_res.setdefault(prot, {})[pos] = residue
 
@@ -603,7 +600,9 @@ def _parse_string_line(
     return None
 
 
-def load_conversion_tables(parquet_path: str, species: str, verbose: bool = False) -> dict[str, Any]:
+def load_conversion_tables(
+    parquet_path: str, species: str, verbose: bool = False
+) -> dict[str, Any]:
     """Load likelihood conversion tables from a Parquet file.
 
     Args:
@@ -611,7 +610,8 @@ def load_conversion_tables(parquet_path: str, species: str, verbose: bool = Fals
         species: Species name to filter on (e.g. ``"human"`` or ``"yeast"``).
         verbose: Emit a log line for each table loaded.
 
-    Returns:
+    Returns
+    -------
         Nested dictionary ``tables[species][tree][player_name][score_kind]``
         where each leaf value is a ``list[CConvEntry]`` as returned by
         :func:`ReadConversionTableFromMemory`.
@@ -627,7 +627,11 @@ def load_conversion_tables(parquet_path: str, species: str, verbose: bool = Fals
         )
         if verbose:
             logger.muted(
-                "Loaded conversion table: {} {} {} {}", row.species, row.tree, row.player_name, row.score_kind
+                "Loaded conversion table: {} {} {} {}",
+                row.species,
+                row.tree,
+                row.player_name,
+                row.score_kind,
             )
 
     logger.success("Loaded likelihood conversion tables for species {}", species)

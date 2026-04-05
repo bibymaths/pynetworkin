@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -309,7 +310,8 @@ class TestProcessSiteTable:
             result = processor.process_site_table(input_file=site_file, output_dir=out_dir)
 
         fasta_content = result["fasta_path"].read_text()
-        assert ">sp|P12345|PROT_HUMAN" in fasta_content
+        # _write_outputs uses the cleaned accession as the FASTA header
+        assert ">P12345" in fasta_content
 
     def test_real_sample_data(
         self, processor: MaxQuantProcessor, tmp_path: Path
@@ -331,34 +333,64 @@ class TestProcessSiteTable:
 
 
 # ---------------------------------------------------------------------------
-# fetch_sequences_from_uniprot – unit tests with mocked ProtMapper
+# fetch_sequences_from_uniprot – unit tests with mocked HTTP helpers
 # ---------------------------------------------------------------------------
 
 
 class TestFetchSequences:
-    def test_returns_fasta_for_valid_id(self, processor: MaxQuantProcessor) -> None:
-        result_df = pd.DataFrame([{
-            "From": "P12345",
-            "Entry": "P12345",
-            "Entry Name": "PROT_HUMAN",
-            "Protein names": "Test protein",
-            "Sequence": "MSEQENCELINES",
-        }])
+    def test_returns_fasta_for_valid_uniprot_id(self, processor: MaxQuantProcessor) -> None:
+        fasta = ">sp|P12345|PROT_HUMAN\nMSEQENCELINES\n"
 
-        with patch.object(processor._mapper, "get", return_value=(result_df, [])):
-            result = processor.fetch_sequences_from_uniprot(
-                ["P12345"], id_types={"P12345": "uniprot"}
+        async def _mock_fetch_one(client, accession):
+            return fasta
+
+        with patch.object(processor, "_fetch_one_fasta", side_effect=_mock_fetch_one):
+            result = asyncio.run(
+                processor.fetch_sequences_from_uniprot(
+                    ["P12345"], id_types={"P12345": "uniprot"}
+                )
             )
 
         assert "P12345" in result
-        assert result["P12345"].startswith(">sp|P12345|")
+        assert result["P12345"] == fasta
 
-    def test_returns_empty_for_failed_id(self, processor: MaxQuantProcessor) -> None:
-        empty_df = pd.DataFrame(columns=["From", "Entry", "Entry Name", "Protein names", "Sequence"])
+    def test_returns_empty_for_failed_uniprot_id(self, processor: MaxQuantProcessor) -> None:
+        async def _mock_fetch_one(client, accession):
+            return None
 
-        with patch.object(processor._mapper, "get", return_value=(empty_df, ["INVALID"])):
-            result = processor.fetch_sequences_from_uniprot(
-                ["INVALID"], id_types={"INVALID": "uniprot"}
+        with patch.object(processor, "_fetch_one_fasta", side_effect=_mock_fetch_one):
+            result = asyncio.run(
+                processor.fetch_sequences_from_uniprot(
+                    ["INVALID"], id_types={"INVALID": "uniprot"}
+                )
             )
 
         assert result == {}
+
+    def test_ensembl_fetched_directly_not_via_uniprot(
+        self, processor: MaxQuantProcessor
+    ) -> None:
+        """Ensembl IDs must use _fetch_ensembl_fasta, never _map_non_uniprot_ids."""
+        fasta = ">ENSP00000123456\nMSEQENCELINES\n"
+
+        async def _mock_ensembl_fetch(client, ensembl_id):
+            return fasta
+
+        async def _mock_map(client, refseq_ids, _ensembl_ids):
+            return {}
+
+        with (
+            patch.object(processor, "_fetch_ensembl_fasta", side_effect=_mock_ensembl_fetch),
+            patch.object(
+                processor, "_map_non_uniprot_ids", side_effect=_mock_map
+            ) as mock_map,
+        ):
+            result = asyncio.run(
+                processor.fetch_sequences_from_uniprot(
+                    ["ENSP00000123456"], id_types={"ENSP00000123456": "ensembl"}
+                )
+            )
+
+        mock_map.assert_not_called()
+        assert "ENSP00000123456" in result
+        assert result["ENSP00000123456"] == fasta

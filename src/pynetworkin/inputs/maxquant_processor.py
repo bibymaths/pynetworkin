@@ -7,9 +7,16 @@
 #   1. Parse the MaxQuant site table (tab-separated).
 #   2. Clean & classify every protein ID in the "Proteins" column.
 #   3. Auto-detect ID type (UniProt, RefSeq, Ensembl, other).
-#   4. Download FASTA sequences from UniProt REST API.
+#   4. Download FASTA sequences:
+#      - Ensembl protein IDs (ENS*P...) are fetched DIRECTLY from the
+#        Ensembl REST sequence endpoint – no UniProt mapping required.
+#      - UniProt accessions are fetched directly from UniProt.
+#      - RefSeq IDs are still mapped via UniProt ID-mapping before fetching.
 #   5. Write a clean FASTA file, a cleaned site table, an ID-mapping CSV,
 #      and a JSON processing report to the requested output directory.
+#
+# Ensembl REST endpoint (protein FASTA):
+#   https://rest.ensembl.org/sequence/id/{ID}?type=protein
 #
 # UniProt REST endpoints:
 #   - Fetch by accession: https://rest.uniprot.org/uniprotkb/{ID}.fasta
@@ -45,6 +52,10 @@ UNIPROT_SEARCH_URL = "https://rest.uniprot.org/uniprotkb/search"
 UNIPROT_IDMAPPING_RUN_URL = "https://rest.uniprot.org/idmapping/run"
 UNIPROT_IDMAPPING_STATUS_URL = "https://rest.uniprot.org/idmapping/status/{job_id}"
 UNIPROT_IDMAPPING_DETAILS_URL = "https://rest.uniprot.org/idmapping/details/{job_id}"
+
+# Ensembl protein sequence endpoint – used directly for ENS*P... IDs so
+# that UniProt ID-mapping is no longer needed for Ensembl accessions.
+ENSEMBL_SEQUENCE_URL = "https://rest.ensembl.org/sequence/id/{id}?type=protein"
 
 UNIPROT_BATCH_SIZE = 50   # max accessions per search request
 MAX_RETRIES = 3
@@ -280,6 +291,55 @@ class MaxQuantProcessor:
                 await asyncio.sleep(RETRY_DELAY * (attempt + 1))
         return None
 
+    async def _fetch_ensembl_fasta(
+        self,
+        client: httpx.AsyncClient,
+        ensembl_id: str,
+    ) -> str | None:
+        """Fetch a single Ensembl protein FASTA directly from Ensembl REST API.
+
+        Ensembl protein IDs (``ENS*P...``) are resolved here without going
+        through UniProt ID-mapping, which avoids stalling on that service.
+
+        Parameters
+        ----------
+        client:
+            Shared async HTTP client.
+        ensembl_id:
+            Cleaned Ensembl protein accession (e.g. ``ENSP00000449404``).
+
+        Returns
+        -------
+        Raw FASTA text (header + sequence lines) or ``None`` if not found.
+        """
+        url = ENSEMBL_SEQUENCE_URL.format(id=quote(ensembl_id, safe=""))
+        for attempt in range(MAX_RETRIES):
+            try:
+                resp = await client.get(
+                    url,
+                    headers={"Accept": "text/x-fasta"},
+                    timeout=30,
+                )
+                if resp.status_code == 200:
+                    text = resp.text.strip()
+                    return text if text.startswith(">") else None
+                if resp.status_code == 429:
+                    # Rate limited – back off
+                    await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+                    continue
+                if resp.status_code == 404:
+                    return None
+                resp.raise_for_status()
+            except httpx.TimeoutException:
+                logger.warning(
+                    "Timeout fetching Ensembl %s (attempt %d)", ensembl_id, attempt + 1
+                )
+                await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+            except httpx.HTTPStatusError as exc:
+                logger.warning("HTTP error fetching Ensembl %s: %s", ensembl_id, exc)
+                await asyncio.sleep(RETRY_DELAY * (attempt + 1))
+        return None
+
     async def _submit_idmapping_job(
         self,
         client: httpx.AsyncClient,
@@ -402,14 +462,20 @@ class MaxQuantProcessor:
     ) -> dict[str, str]:
         """Fetch FASTA sequences for a list of protein IDs.
 
+        Ensembl protein IDs (``ENS*P...``) are fetched directly from the
+        Ensembl REST sequence endpoint – the UniProt ID-mapping step is
+        bypassed entirely for these IDs.  RefSeq IDs are still mapped via
+        UniProt ID-mapping before fetching.  Plain UniProt accessions are
+        fetched directly from UniProt.
+
         Parameters
         ----------
         protein_ids:
             List of cleaned protein accessions.
         id_types:
             Optional mapping of accession → id_type ('uniprot', 'refseq',
-            'ensembl', 'other').  When provided, non-UniProt IDs are first
-            mapped via UniProt ID-mapping before fetching.
+            'ensembl', 'other').  When provided, non-UniProt IDs are handled
+            according to their type (see above).
 
         Returns
         -------
@@ -421,18 +487,44 @@ class MaxQuantProcessor:
         sequences: dict[str, str] = {}
 
         async with httpx.AsyncClient(follow_redirects=True) as client:
-            # ── 1. Map non-UniProt IDs ────────────────────────────────────────
+            # ── 1. Fetch Ensembl sequences DIRECTLY from Ensembl REST API ─────
+            # Ensembl protein IDs are resolved here without UniProt mapping.
+            ensembl_ids = [p for p in protein_ids if id_types.get(p) == "ensembl"]
+            if ensembl_ids:
+                logger.info(
+                    "Fetching %d Ensembl sequence(s) directly from Ensembl REST API",
+                    len(ensembl_ids),
+                )
+                for idx, eid in enumerate(ensembl_ids):
+                    fasta = await self._fetch_ensembl_fasta(client, eid)
+                    if fasta:
+                        sequences[eid] = fasta
+                        logger.debug("Fetched Ensembl sequence: %s", eid)
+                    else:
+                        logger.warning("No Ensembl sequence found for %s", eid)
+                    # Ensembl REST API does not support batching, so we rate-limit
+                    # between individual requests (unlike the batched UniProt path).
+                    if idx < len(ensembl_ids) - 1:
+                        await asyncio.sleep(self.rate_limit_delay)
+                logger.info(
+                    "Ensembl fetch complete: %d downloaded, %d missing",
+                    sum(1 for eid in ensembl_ids if eid in sequences),
+                    sum(1 for eid in ensembl_ids if eid not in sequences),
+                )
+
+            # ── 2. Map RefSeq IDs to UniProt (Ensembl excluded) ───────────────
             refseq = [p for p in protein_ids if id_types.get(p) == "refseq"]
-            ensembl = [p for p in protein_ids if id_types.get(p) == "ensembl"]
             id_map: dict[str, str] = {}  # original → uniprot accession
-            if refseq or ensembl:
-                id_map = await self._map_non_uniprot_ids(client, refseq, ensembl)
+            if refseq:
+                id_map = await self._map_non_uniprot_ids(client, refseq, [])
 
             # Build the set of UniProt accessions to fetch
             fetch_targets: dict[str, str] = {}  # uniprot_acc → original_id
             for pid in protein_ids:
                 ptype = id_types.get(pid, "uniprot")
-                if ptype in {"refseq", "ensembl"}:
+                if ptype == "ensembl":
+                    continue  # already fetched above
+                if ptype == "refseq":
                     uniprot_acc = id_map.get(pid)
                     if uniprot_acc:
                         fetch_targets[uniprot_acc] = pid
@@ -443,7 +535,7 @@ class MaxQuantProcessor:
                 else:
                     fetch_targets[pid] = pid
 
-            # ── 2. Fetch FASTA in batches ─────────────────────────────────────
+            # ── 3. Fetch FASTA in batches from UniProt ────────────────────────
             accessions = list(fetch_targets.keys())
             for i in range(0, len(accessions), UNIPROT_BATCH_SIZE):
                 batch = accessions[i : i + UNIPROT_BATCH_SIZE]

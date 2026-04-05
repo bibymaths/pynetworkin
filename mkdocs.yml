@@ -78,4 +78,3 @@ nav:
       - Graph Scoring: api/graph_scoring.md
       - Recovery: api/recovery.md
       - Output: api/output.md
-  - Run Manual: RUN.md

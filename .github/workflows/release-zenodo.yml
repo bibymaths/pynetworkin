@@ -8,6 +8,8 @@ jobs:
   zenodo-deposit:
     name: Deposit to Zenodo
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 

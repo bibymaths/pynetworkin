@@ -243,42 +243,11 @@ def WriteConversionTableBin(path_conversion_table, conv_tbl):
     f.close()
 '''
 
-def WriteConversionTableBin(path_conversion_table, conv_tbl):
-    f = open(path_conversion_table, 'w')
-    print >> f, "Score\tLower bound\tUpper bound\tLikelihood\tTPR\tFPR\tPPV\tFDR\tNo. positives\tNo. negatives"
-    for conv_entry in conv_tbl:
-        print >> f, "%.5f\t%.5f\t%.5f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f\t%d\t%d" % \
-              (conv_entry.score, conv_entry.score_lower_bound, conv_entry.score_upper_bound, conv_entry.L, conv_entry.TPR, conv_entry.FPR, conv_entry.PPV, conv_entry.FDR, conv_entry.num_pos, conv_entry.num_neg)
-    f.close()
-
-
-def ReadConversionTableBin(path_conversion_table):
-    conv_tbl = []
-
-    f = open(path_conversion_table)
-    for line in f.readlines()[1:]:
-        tokens = line.split()
-        conv_entry = CConvEntry()
-        conv_entry.score = float(tokens[0])
-        conv_entry.score_lower_bound = float(tokens[1])
-        conv_entry.score_upper_bound = float(tokens[2])
-        conv_entry.L = float(tokens[3])
-        conv_tbl.append(conv_entry)
-        
-    f.close()
-    
-    #conv_tbl.sort(key=lambda(x):x.score, reverse=True)
-    conv_tbl.sort(key=lambda x: x.score, reverse=True)
-    
-    return conv_tbl
-
-    
 def WriteConversionTableFDR(path_conversion_table, conv_tbl):
-    f = open(path_conversion_table, 'w')
-    print >> f, "Score\tFDR"
-    for conv_entry in conv_tbl:
-        print >> f, "%.5f\t%.3f" % (conv_entry.netphorest_prob, conv_entry.FDR)
-    f.close()
+    with open(path_conversion_table, 'w') as f:
+        f.write("Score\tFDR\n")
+        for conv_entry in conv_tbl:
+            f.write("%.5f\t%.3f\n" % (conv_entry.netphorest_prob, conv_entry.FDR))
     
 def GenerateLikelihoodConversionTbl(predictions, num_pos, num_neg, func_score, VAZD):
     bin_size = int(len(predictions)/math.sqrt(num_pos))
@@ -315,12 +284,13 @@ def GenerateLikelihoodConversionTbl(predictions, num_pos, num_neg, func_score, V
     return conv_tbl
 
 def WriteConversionTableBin(path_conversion_table, conv_tbl):
-    f = open(path_conversion_table, 'w')
-    print >> f, "Score\tLower bound\tUpper bound\tLikelihood\tTPR\tFPR\tPPV\tFDR\tNo. positives\tNo. negatives"
-    for conv_entry in conv_tbl:
-        print >> f, "%.5f\t%.5f\t%.5f\t%.5f\t%.4f\t%.4f\t%.4f\t%.4f\t%d\t%d" % \
-              (conv_entry.score, conv_entry.score_lower_bound, conv_entry.score_upper_bound, conv_entry.L, conv_entry.TPR, conv_entry.FPR, conv_entry.PPV, conv_entry.FDR, conv_entry.num_pos, conv_entry.num_neg)
-    f.close()
+    with open(path_conversion_table, 'w') as f:
+        f.write("Score\tLower bound\tUpper bound\tLikelihood\tTPR\tFPR\tPPV\tFDR\tNo. positives\tNo. negatives\n")
+        for conv_entry in conv_tbl:
+            f.write("%.5f\t%.5f\t%.5f\t%.5f\t%.4f\t%.4f\t%.4f\t%.4f\t%d\t%d\n" % (
+                conv_entry.score, conv_entry.score_lower_bound, conv_entry.score_upper_bound,
+                conv_entry.L, conv_entry.TPR, conv_entry.FPR, conv_entry.PPV, conv_entry.FDR,
+                conv_entry.num_pos, conv_entry.num_neg))
 
 
 def ReadConversionTableBin(path_conversion_table):

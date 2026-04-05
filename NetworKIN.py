@@ -1225,7 +1225,7 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
                                                     conversion_tbl_string = dLRConvTbl[species][tree]["general"][
                                                         "string"]
                                         elif species == "yeast":
-                                            if dLRConvTbl[species][tree].has_key(name):
+                                            if name in dLRConvTbl[species][tree]:
                                                 conversion_tbl_netphorest = dLRConvTbl[species][tree][name][
                                                     "netphorest"]
                                                 conversion_tbl_string = dLRConvTbl[species][tree][name]["string"]

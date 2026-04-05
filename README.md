@@ -21,7 +21,7 @@ interaction data.
   MaxQuant, and custom formats.
 - Integrates sequence motif posterior probabilities with STRING network proximity
   scores using pre-calibrated Bayesian likelihood-ratio tables.
-- Outputs per-site predictions as a CSV file in the `results/` directory.
+- Outputs per-site predictions as a TSV file in the `results/` directory.
 
 ---
 
@@ -29,76 +29,76 @@ interaction data.
 
 | Dependency | Version | Notes |
 |---|---|---|
-| Python | ≥ 3.6 | |
-| NumPy | any | |
-| Pandas | any | (used by `filter_sites.py`) |
-| NCBI BLAST+ | ≥ 2.9 | `blastp` must be on `PATH` or supplied via `-b` |
-| NetPhorest | — | C binary in `netphorest/`; see compilation instructions below |
+| Python | ≥ 3.10 | |
+| NumPy | ≥ 1.26 | |
+| Pandas | ≥ 2.2 | |
+| pynetphorest | ≥ 0.1.1 | Motif scoring atlas |
+| NCBI BLAST+ | ≥ 2.9 | `blastp` must be on `PATH` or supplied via `--blast-dir` |
 
 ---
 
 ## Installation
 
-### 1. Compile NetPhorest
-
 ```bash
-cd netphorest
-cc -O3 -o netphorest netphorest.c -lm
-cd ..
+pip install -e .
 ```
 
-> **Note:** Avoid GCC 4.x — it causes silent crashes in the NetPhorest binary.
-> GCC 5+ or Clang are recommended.
-
-### 2. Install BLAST+
-
-Download from [NCBI BLAST+](https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/).
-Ensure `blastp` and `makeblastdb` are on your `PATH`, or pass the directory with `-b`.
-
-### 3. Install Python dependencies
+Or with the optional knowledge-graph extras:
 
 ```bash
-pip install numpy pandas
+pip install -e ".[kg]"
 ```
 
 ---
 
 ## Usage
 
+### CLI
+
+```bash
+pynetworkin predict <FASTA-file> [options]
 ```
-python3 NetworKIN.py [options] <organism> <FASTA-file> [sites-file]
-```
 
-| Argument | Description |
-|---|---|
-| `organism` | NCBI taxon ID: `9606` (human) or `4932` (yeast) |
-| `FASTA-file` | FASTA file with protein sequences; IDs must match the sites file |
-| `sites-file` | Phosphosite file (optional; if omitted, all S/T/Y residues are predicted) |
-
-### Key options
-
-| Flag | Default | Description |
+| Argument / Option | Default | Description |
 |---|---|---|
-| `-n` / `--netphorest` | `$NETPHOREST_PATH` | Path to the NetPhorest binary |
-| `-b` / `--blast` | `$BLAST_PATH` | Directory containing BLAST+ binaries |
-| `-d` / `--data` | `./data` | Directory with reference data files |
-| `-p` / `--path` | `direct` | STRING path type: `direct` or `indirect` |
-| `-t` / `--threads` | `1` | Number of BLAST threads |
-| `-v` / `--verbose` | off | Print detailed progress to stderr |
-| `-u` / `--uncovered` | off | Use STRING likelihood for kinases not covered by NetPhorest |
+| `FASTA-file` | (required) | Input FASTA or phosphosite file |
+| `--output` / `-o` | `<input>.networkin.tsv` | Output file path |
+| `--format` / `-f` | `tsv` | Output format: `tsv` or `sif` |
+| `--species` | `9606` | NCBI taxonomy ID (`9606` = human, `4932` = yeast) |
+| `--refresh` / `-r` | off | Force re-fetch of cached network data |
+| `--verbose` / `-v` | off | Enable verbose logging |
 
 ### Example
 
 ```bash
-python3 NetworKIN.py \
-    -n netphorest/netphorest \
-    -d data \
-    9606 \
-    test.fas \
-    test.tsv
+pynetworkin predict data_MaxQuant_sample/test.fasta --output results/test.networkin.tsv
 ```
 
-Results are written to `results/<fasta-filename>.result.csv`.
+Results are written to `results/<fasta-filename>.result.tsv`.
+
+### Other commands
+
+```bash
+pynetworkin info       # Show runtime/package information
+pynetworkin cache      # Show cache contents
+pynetworkin cache --clear  # Clear cached network data
+```
+
+### Python API
+
+```python
+from pynetworkin import AppConfig, run_pipeline
+
+config = AppConfig(
+    organism="9606",
+    fasta_path="data_MaxQuant_sample/test.fasta",
+    sites_path=None,
+    datadir="data",
+    blast_dir="",
+)
+results = run_pipeline(config)
+print(results["prediction_count"], "predictions written to", results["output_path"])
+```
 
 ---
 
@@ -122,17 +122,17 @@ first `_` on the header line.
 
 ## Output format
 
-Results CSV columns:
+Results TSV columns:
 
 | Column | Description |
 |---|---|
 | Name | Target protein ID |
 | Position | Phosphosite position in the protein |
 | Tree | NetPhorest tree (KIN, SH2, PTP, 1433, …) |
-| NetPhorest Group | NetPhorest classifier group |
+| Motif Group | NetPhorest classifier group |
 | Kinase/Phosphatase/Phospho-binding domain | Predicted enzyme |
 | NetworKIN score | Integrated Bayesian score (≥ 0.02 reported) |
-| NetPhorest probability | Raw NetPhorest posterior |
+| Motif probability | Raw NetPhorest posterior |
 | STRING score | STRING best-path proximity score |
 | Target STRING ID | Ensembl protein ID of the substrate |
 | Kinase STRING ID | Ensembl protein ID of the enzyme |
@@ -142,23 +142,56 @@ Results CSV columns:
 | Kinase description | STRING functional description of enzyme |
 | Peptide sequence window | ±7 aa window around the phosphosite |
 | Intermediate nodes | Best-path intermediate proteins in STRING |
+| recovered | `True` if recovered by the false-negative recovery step |
+| recovery_method | Method used for recovery (e.g. `context_proximity`) |
 
 ---
 
 ## Repository structure
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed description of the code
-structure and execution flow.
+```
+src/
+  pynetworkin/          # Core pipeline package
+    __init__.py         # Public API (AppConfig, run_pipeline)
+    networkin.py        # Main pipeline: AppConfig, run_pipeline, detect_site_file_type, …
+    motif_scoring.py    # pynetphorest batch scorer wrapper
+    graph_scoring.py    # STRING network context scoring & prediction ranking
+    likelihood.py       # Bayesian likelihood conversion tables
+    logger.py           # Loguru/Rich logging wrapper
+    output.py           # TSV / Cytoscape SIF output writers
+    recovery.py         # False-negative recovery via network proximity
+    cli.py              # Typer CLI entry-point
+    inputs/
+      phosphosites.py   # OmniPath / PhosphoSitePlus / fallback fetcher
+      string_network.py # STRING flat-file / REST API / fallback fetcher
+scripts/
+  backup.py                  # Legacy NetworKIN 3.0 reference script (Python 3 port)
+  cleanup_HGNC_mapping.py    # HGNC symbol–Ensembl ID reconciliation utility
+  generate_sample_data.py    # Generate offline fallback data files
+  migrate_to_parquet.py      # Migrate legacy .txt conversion tables → Parquet
+data/
+  conversion_direct.parquet   # Pre-built likelihood tables (direct STRING paths)
+  conversion_indirect.parquet # Pre-built likelihood tables (indirect STRING paths)
+  fallback/                   # Bundled offline sample data
+  string_data/                # STRING interaction flat files
+tests/
+  conftest.py             # pytest path setup (adds src/ to sys.path)
+  test_motif_scoring.py
+  test_output.py
+  test_recovery.py
+  test_networkin.py       # Tests for load_conversion_tables, detect_site_file_type, run_pipeline
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed description of the execution flow.
 
 ---
 
 ## Data sources
 
-- **NetPhorest**: kinase-group motif models.
-  Source: `netphorest/`; original publication: Miller *et al.*, 2008.
+- **pynetphorest**: kinase-group motif models (Python package).
 - **STRING v12**: human protein interactions and sequences.
   Downloaded from [string-db.org](https://string-db.org).
-- **HGNC symbol mapping**: `HGNC_Symbol_mapping/`.
+- **OmniPath**: phosphorylation site reference data (fetched live, cached locally).
 
 ---
 
@@ -173,6 +206,6 @@ This repository provides a modern reimplementation of the NetworKIN framework.
   - Uses a rewritten likelihood model
   - Implements a new modular pipeline
 
---- 
+---
 
 License: MIT

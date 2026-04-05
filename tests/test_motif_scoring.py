@@ -1,11 +1,6 @@
 """Tests for motif_scoring.py batch scorer."""
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from motif_scoring import score_sequences
+from pynetworkin.motif_scoring import score_sequences
 
 
 def test_pka_substrate_lrraslg():

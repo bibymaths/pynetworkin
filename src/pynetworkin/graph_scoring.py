@@ -17,7 +17,7 @@ from typing import Any
 
 import pandas as pd
 
-from logger import logger
+from pynetworkin.logger import logger
 
 
 def compute_networkin_score(

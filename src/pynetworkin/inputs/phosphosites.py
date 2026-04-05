@@ -29,7 +29,7 @@ CACHE_DIR.mkdir(exist_ok=True)
 OMNIPATH_ENZSUB_URL = "https://omnipathdb.org/enzsub"
 
 # Bundled offline fallback (always present in the repository).
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 FALLBACK_TSV = _REPO_ROOT / "data" / "fallback" / "phosphosites_sample.tsv"
 
 CACHE_TTL_DAYS = 7

@@ -239,7 +239,7 @@ def WriteConversionTableBin(path_conversion_table, conv_tbl):
     print >> f, "Score\tLower bound\tUpper bound\tLikelihood\tTPR\tFPR\tPPV\tFDR"
     for conv_entry in conv_tbl:
         print >> f, "%.5f\t%.5f\t%.5f\t%.3f\t%.3f\t%.3f\t%.3f\t%.3f" % \
-              (conv_entry.netphorest_prob, conv_entry.score_lower_bound, conv_entry.score_upper_bound, conv_entry.L, conv_entry.TPR, conv_entry.FPR, conv_entry.PPV, conv_entry.FDR)
+              (conv_entry.score, conv_entry.score_lower_bound, conv_entry.score_upper_bound, conv_entry.L, conv_entry.TPR, conv_entry.FPR, conv_entry.PPV, conv_entry.FDR)
     f.close()
 '''
 
@@ -247,7 +247,7 @@ def WriteConversionTableFDR(path_conversion_table, conv_tbl):
     with open(path_conversion_table, 'w') as f:
         f.write("Score\tFDR\n")
         for conv_entry in conv_tbl:
-            f.write("%.5f\t%.3f\n" % (conv_entry.netphorest_prob, conv_entry.FDR))
+            f.write("%.5f\t%.3f\n" % (conv_entry.score, conv_entry.FDR))
     
 def GenerateLikelihoodConversionTbl(predictions, num_pos, num_neg, func_score, VAZD):
     bin_size = int(len(predictions)/math.sqrt(num_pos))

@@ -14,8 +14,8 @@ new_df = df[['Target STRING ID',
              'Kinase Name',
              'NetworKIN score',
              'Tree',
-             'NetPhorest Group',
-             'NetPhorest probability',
+             'Motif Group',
+             'Motif probability',
              'Kinase STRING ID',
              'STRING score',
              'Target Name',
@@ -27,8 +27,8 @@ new_df.rename(columns={'Position': 'position'}, inplace=True)
 new_df.rename(columns={'Kinase Name': 'id'}, inplace=True)
 new_df.rename(columns={'NetworKIN score': 'networkin_score'}, inplace=True)
 new_df.rename(columns={'Tree': 'tree'}, inplace=True)
-new_df.rename(columns={'NetPhorest Group': 'netphorest_group'}, inplace=True)
-new_df.rename(columns={'NetPhorest probability': 'netphorest_score'}, inplace=True)
+new_df.rename(columns={'Motif Group': 'motif_group'}, inplace=True)
+new_df.rename(columns={'Motif probability': 'motif_score'}, inplace=True)
 new_df.rename(columns={'Kinase STRING ID': 'string_identifier'}, inplace=True)
 new_df.rename(columns={'STRING score': 'string_score'}, inplace=True)
 new_df.rename(columns={'Target Name': 'substrate_name'}, inplace=True)

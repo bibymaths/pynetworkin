@@ -42,6 +42,7 @@ import csv
 from string import *
 from likelihood import ReadConversionTableBin
 from likelihood import ConvertScore2L
+from motif_scoring import score_sequences
 import platform
 from itertools import chain
 import numpy as np
@@ -73,17 +74,11 @@ global options
 # global DATADIR
 # DATADIR = ""
 
-# Number of threads used for NetPhorest and BLAST
+# Number of threads used for motif scoring and BLAST
 # setting it to a high number can also help in case NetworKIN uses too much memory
-# as NetPhorest result files will be read one after the other to save memory
 # -> the more files, the less memory usage
 # global NUMBER_OF_PROCESSES
 # NUMBER_OF_PROCESSES = "1";
-
-# should temporary files of netphorest be zipped?
-# saves some diskspace and makes it sometimes faster (depending on the CPU/harddisk speed)
-# global SAVE_DISKSPACE
-# SAVE_DISKSPACE = "";
 
 # Should the analysis be limited to specific trees?
 # just comment it out if you want to predict on all
@@ -497,233 +492,6 @@ def readAliasFiles(organism, datadir,map_group_to_domain):
     return alias_hash, desc_hash, name_hash
 
 
-def runNetPhorest_one_instance(id_seq, id_pos_res):
-    # check how many sequences we actually have
-    id_pos_tree_pred ={}
-    number_of_sequences = 0
-    if id_pos_res == {}:
-        number_of_sequences = len(id_seq)
-    else:
-        number_of_sequences = len(id_pos_res)
-
-
-    file_in=tempfile.NamedTemporaryFile(mode='w+',delete=False)
-    file_out = tempfile.NamedTemporaryFile(mode='w+',delete=False)
-
-    if id_pos_res == {}:
-        for id in id_seq:
-            file_in.write(">%s\n%s\n" % (id, id_seq[id]))
-    else:
-        for id in id_seq:
-            if id in id_pos_res:
-                file_in.write(">%s\n%s\n" % (id, id_seq[id]))
-    file_in.flush()
-
-    #print(netphorest_bin + ' < ' + file_in.name + '| gzip -9 > ' + file_out.name)
-    myPopen(netphorest_bin + ' < ' + file_in.name + ' > ' + file_out.name)
-    file_out.flush()
-    netphorest_results = file_out.readlines()
-    #print(len(netphorest_results))
-    for line in netphorest_results:
-        #print(line)
-        if (line[0] == '#') or (line == ''):
-            continue
-        tokens = line.split('\t')
-        id = tokens[0]
-        try:
-            pos = int(tokens[1])
-        except:
-            sys.stderr.write(str(tokens))
-        # NetPhorest2 introduces organism column
-        try:
-            (res, peptide, method, organism, tree, pred) = tokens[2:8]
-        except:
-            sys.stderr.write(str(tokens))
-        #try:
-        #    if tree not in limitTrees:
-        #        continue
-        #except:
-        #    pass
-        try:
-            score = float(tokens[8])
-        except:
-            continue
-
-        if (id in id_pos_res and pos in id_pos_res[id]) or id_pos_res == {}:
-            if id in id_pos_tree_pred:
-                if pos in id_pos_tree_pred[id]:
-                    if tree in id_pos_tree_pred[id][pos]:
-                        id_pos_tree_pred[id][pos][tree][pred] = (res, peptide, score)
-                    else:
-                        id_pos_tree_pred[id][pos][tree] = {pred: (res, peptide, score)}
-                else:
-                    id_pos_tree_pred[id][pos] = {tree: {pred: (res, peptide, score)}}
-            else:
-                id_pos_tree_pred[id] = {pos: {tree: {pred: (res, peptide, score)}}}
-        else:
-            pass
-    #print(id_pos_tree_pred)
-    return id_pos_tree_pred
-
-def runNetPhorest(id_seq, id_pos_res, save_diskspace, number_of_processes, number_of_active_processes=1, fast=False,
-                  leave_intermediates=False):
-    #if number_of_active_processes < 2:
-    #    raise "Number of maximum threads is less than 2"
-    id_pos_tree_pred = {}
-
-    # check how many sequences we actually have
-    number_of_sequences = 0
-    if id_pos_res == {}:
-        number_of_sequences = len(id_seq)
-    else:
-        number_of_sequences = len(id_pos_res)
-
-    if number_of_sequences < number_of_processes:
-        number_of_processes = number_of_sequences
-
-    # use multiple instances of netphorest
-    file_in = []
-    file_out = []
-
-    class CDummy:
-        def __init__(self, name):
-            self.name = name
-
-    # create filehandles
-    for i in range(number_of_processes):
-        file_i=tempfile.NamedTemporaryFile(mode='w',delete=False)
-        file_in.append(file_i)
-
-        if fast or leave_intermediates:
-            if save_diskspace:
-                file_out[i] = CDummy("%s.%s.gz" % (fn_netphorest_output, str(i)))  # jhkim
-
-            else:
-                file_out[i] = CDummy("%s.%s.txt" % (fn_netphorest_output, str(i)))
-        else:
-            file_o = tempfile.NamedTemporaryFile(mode='w',delete=False)
-            file_out.append(file_o)
-
-    # distribute data into different files
-    line_counter = 0;
-    if id_pos_res == {}:
-        for id in id_seq:
-            line_counter = line_counter + 1
-            number = line_counter % number_of_processes
-            file_in[number].write(">%s\n%s\n" % (id, id_seq[id]))
-    # file = open(args[1], 'r')
-    # for line in file:
-    #	if( re.search('^>',line) ):
-    #		line_counter = line_counter + 1
-    #	number = line_counter % number_of_processes
-    #	file_in[number].write(line)
-    else:
-        for id in id_seq:
-            if id in id_pos_res:
-                line_counter = line_counter + 1
-                number = line_counter % number_of_processes
-                file_in[number].write(">%s\n%s\n" % (id, id_seq[id]))
-    for i in range(number_of_processes):
-        file_in[i].flush()
-
-    # run NetPhorest for each file in parallel
-    if options.verbose:
-        sys.stderr.write("\n")
-
-    if options.verbose:
-        sys.stderr.write("Running on %s sequences\n" % line_counter)
-
-    for i in range(number_of_processes):
-        if fast and os.path.isfile(file_out[i].name):
-            if options.verbose:
-                sys.stderr.write("%s is already exist.\n" % file_out[i].name)
-            continue
-
-        while threading.active_count() > number_of_active_processes:
-            pass
-            #sys.stderr.write(str(threading.active_count())+'\n')
-            #time.sleep(5)
-
-        if options.verbose:
-            sys.stderr.write(netphorest_bin + ' < ' + file_in[i].name + ' > ' + file_out[i].name + '\n');
-        if save_diskspace:
-            arg = (netphorest_bin + ' < ' + file_in[i].name + '| gzip -9 > ' + file_out[i].name,)
-        else:
-            arg = (netphorest_bin + ' < ' + file_in[i].name + ' > ' + file_out[i].name,)
-
-        threading.Thread(target=myPopen, args=arg).start()
-
-    # wait for threads to finish
-    while (threading.active_count() > 1):
-        pass
-        #sys.stderr.write('.')
-        #time.sleep(5)
-
-    return file_out
-
-
-# Parse the NetPhorest output
-# expected format:
-# Name  Position        Residue Peptide Method    Orgnism    Tree    Classifier      Posterior       Prior
-# O00151  2       T       ----MtTQQID     nn    human    KIN     CDK2_CDK3_group    0.040050    0.028284
-def parseNetphorestFile(filename, id_pos_res, save_diskspace):
-    save_diskspace = False
-    if save_diskspace:
-        command = "gzip -cd %s" % (filename)
-    else:
-        command = "cat %s" % (filename)
-
-    if options.verbose:
-        sys.stderr.write('Parsing NetPhorest result file: "' + filename + '"\n');
-    try:
-        netphorest_results = myPopen(command)
-    except:
-        sys.stderr.write("Going to sleep for 1 hour to give you time to debug:\nCrashed with '%s'\n" % command)
-        time.sleep(3600)
-
-    id_pos_tree_pred = {}
-
-    # print(netphorest_results)
-    netphorest_results = netphorest_results.split('\n')
-    for line in netphorest_results:
-        if (re.match('^#', line)) or (line == ''):
-            continue
-        tokens = line.split('\t')
-        id = tokens[0]
-        pos = int(tokens[1])
-        # NetPhorest2 introduces organism column
-        try:
-            (res, peptide, method, organism, tree, pred) = tokens[2:8]
-        except ValueError:
-            sys.stderr.write(tokens)
-            raise
-        try:
-            if tree not in limitTrees:
-                continue
-        except:
-            pass
-        try:
-            score = float(tokens[8])
-        except:
-            continue
-        if (id in id_pos_res and pos in id_pos_res[id]) or id_pos_res == {}:
-            if id in id_pos_tree_pred:
-                if pos in id_pos_tree_pred[id]:
-                    if tree in id_pos_tree_pred[id][pos]:
-                        id_pos_tree_pred[id][pos][tree][pred] = (res, peptide, score)
-                    else:
-                        id_pos_tree_pred[id][pos][tree] = {pred: (res, peptide, score)}
-                else:
-                    id_pos_tree_pred[id][pos] = {tree: {pred: (res, peptide, score)}}
-            else:
-                id_pos_tree_pred[id] = {pos: {tree: {pred: (res, peptide, score)}}}
-        else:
-            pass
-    else:
-        pass
-    return id_pos_tree_pred
-
-
 def ReadLines(fname):
     f = open(fname)
     lines = f.readlines()
@@ -1061,10 +829,10 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
         writer.writerow(['Name'
                             , 'Position'
                             , 'Tree'
-                            , 'NetPhorest Group'
+                            , 'Motif Group'
                             , 'Kinase/Phosphatase/Phospho-binding domain'
                             , 'NetworKIN score'
-                            , 'NetPhorest probability'
+                            , 'Motif probability'
                             , 'STRING score'
                             , 'Target STRING ID'
                             , 'Kinase STRING ID'
@@ -1078,21 +846,22 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
 
     dLRConvTbl = {}
     for fname in glob.glob(os.path.join(dir_likelihood_conversion_tbl, "conversion_tbl_*_smooth*")):
-        netphorest_or_string, species_of_conversion_table, tree, player_name = \
+        score_src, species_of_conversion_table, tree, player_name = \
         re.findall("conversion_tbl_([a-z]+)_smooth_([a-z]+)_([A-Z0-9]+)_([a-zA-Z0-9_/-]+)",
                    os.path.basename(os.path.splitext(fname)[0]))[0]
-        # species, tree, player_name = os.path.basename(os.path.splitext(fname)[0]).rsplit('_', 3)[1:]
+        # Normalise the legacy filename tag to a uniform key name
+        score_src = "motif" if score_src != "string" else "string"
 
         if species_of_conversion_table != species:
             continue
 
         conversion_tbl = ReadConversionTableBin(fname)
-        SetValueIntoMultiLevelDict(dLRConvTbl, [species_of_conversion_table, tree, player_name, netphorest_or_string],
+        SetValueIntoMultiLevelDict(dLRConvTbl, [species_of_conversion_table, tree, player_name, score_src],
                                    conversion_tbl)
 
         if options.verbose:
             sys.stderr.write("Conversion table %s %s %s %s\n" % (
-            species_of_conversion_table, tree, player_name, netphorest_or_string))
+            species_of_conversion_table, tree, player_name, score_src))
 
     c_np = 0
     c_map = 0
@@ -1104,7 +873,7 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
     c_res = 0
     pred_not_mapped=[]
     name_not_mapped=[]
-    # For each ID in NetPhorest
+    # For each scored protein ID
     for id in id_pos_tree_pred:
         c_np += 1
         # We have a mapping to STRING
@@ -1131,7 +900,7 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
                             # if string in string network
                             if string1 in tree_pred_string_data:
                                 c_string+=1
-                                (res, peptide, netphorestScore) = id_pos_tree_pred[id][pos][tree][pred]
+                                (res, peptide, motifScore) = id_pos_tree_pred[id][pos][tree][pred]
                                 for string2 in tree_pred_string_data[string1]:
 
                                     if string2 in string_alias:
@@ -1191,16 +960,16 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
                                             else:
                                                 raise "This species is not supported"
 
-                                            likelihood_netphorest = 1
+                                            likelihood_motif = 1
                                             likelihood_string = ConvertScore2L(stringScore, conversion_tbl_string)
-                                            unified_likelihood = likelihood_netphorest * likelihood_string
+                                            unified_likelihood = likelihood_motif * likelihood_string
                                             networkinScore = unified_likelihood
 
                                             # NetworKIN result
                                             if networkinScore >= 0.02:
                                                 c_if += 1
                                                 result = id + '\t' + res + str(pos) + '\t' + tree + '\t' + pred + '\t' + name + '\t' + \
-                                                         format(networkinScore, ".4f") + '\t' + format(netphorestScore,'.4f') + '\t' + format(stringScore, '.4f') + '\t' + \
+                                                         format(networkinScore, ".4f") + '\t' + format(motifScore,'.4f') + '\t' + format(stringScore, '.4f') + '\t' + \
                                                          string1 + '\t' + string2 + '\t' + bestName1 + '\t' + bestName2 + '\t' + desc1 + '\t' + desc2 + '\t' + peptide + '\t' + path
 
                                         else:
@@ -1211,43 +980,42 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
 
                                         if species == "human":
                                             if tree in ["1433", "BRCT", "WW", "PTB", "WD40", "FHA"]:
-                                                conversion_tbl_netphorest = dLRConvTbl[species]["SH2"]["general"][
-                                                    "netphorest"]
+                                                conversion_tbl_motif = dLRConvTbl[species]["SH2"]["general"][
+                                                    "motif"]
                                                 conversion_tbl_string = dLRConvTbl[species]["SH2"]["general"]["string"]
                                             else:
                                                 if name in dLRConvTbl[species][tree]:
-                                                    conversion_tbl_netphorest = dLRConvTbl[species][tree][name][
-                                                        "netphorest"]
+                                                    conversion_tbl_motif = dLRConvTbl[species][tree][name][
+                                                        "motif"]
                                                     conversion_tbl_string = dLRConvTbl[species][tree][name]["string"]
                                                 else:
-                                                    conversion_tbl_netphorest = dLRConvTbl[species][tree]["general"][
-                                                        "netphorest"]
+                                                    conversion_tbl_motif = dLRConvTbl[species][tree]["general"][
+                                                        "motif"]
                                                     conversion_tbl_string = dLRConvTbl[species][tree]["general"][
                                                         "string"]
                                         elif species == "yeast":
                                             if name in dLRConvTbl[species][tree]:
-                                                conversion_tbl_netphorest = dLRConvTbl[species][tree][name][
-                                                    "netphorest"]
+                                                conversion_tbl_motif = dLRConvTbl[species][tree][name][
+                                                    "motif"]
                                                 conversion_tbl_string = dLRConvTbl[species][tree][name]["string"]
                                             else:
-                                                conversion_tbl_netphorest = dLRConvTbl[species][tree]["general"][
-                                                    "netphorest"]
+                                                conversion_tbl_motif = dLRConvTbl[species][tree]["general"][
+                                                    "motif"]
                                                 conversion_tbl_string = dLRConvTbl[species][tree]["general"]["string"]
                                         else:
                                             raise "This species is not supported"
 
-                                        likelihood_netphorest = ConvertScore2L(netphorestScore,
-                                                                               conversion_tbl_netphorest)
+                                        likelihood_motif = ConvertScore2L(motifScore,
+                                                                               conversion_tbl_motif)
                                         likelihood_string = ConvertScore2L(stringScore, conversion_tbl_string)
-                                        unified_likelihood = likelihood_netphorest * likelihood_string
+                                        unified_likelihood = likelihood_motif * likelihood_string
                                         networkinScore = unified_likelihood
-                                        # networkinScore = pow(stringScore, ALPHA)*pow(netphorestScore, 1-ALPHA)
 
                                         # NetworKIN result
                                         c_res+=1
                                         result = id + '\t' + res + str(
                                             pos) + '\t' + tree + '\t' + pred + '\t' + name + '\t' + \
-                                                 format(networkinScore, ".4f") + '\t' + format(netphorestScore,'.4f') + '\t' + format(stringScore, '.4f') + '\t' + \
+                                                 format(networkinScore, ".4f") + '\t' + format(motifScore,'.4f') + '\t' + format(stringScore, '.4f') + '\t' + \
                                                  string1 + '\t' + string2 + '\t' + bestName1 + '\t' + bestName2 + '\t' + desc1 + '\t' + desc2 + '\t' + peptide + '\t' + path
 
                                     with open(csv_filename, 'a', newline='') as csvfile:
@@ -1343,19 +1111,14 @@ def Main():
     # Load the STRING network data
     sys.stderr.write("Loading STRING network\n")
     tree_pred_string_data = loadSTRINGdata(string2incoming, options.datadir,string_alias, options.threads)
-    # Run NetPhorest
-    sys.stderr.write("Running NetPhorest\n")
-    # netphorestTmpFiles = runNetPhorest(id_seq, id_pos_res, options.compress, options.threads, options.active_threads, options.fast, options.leave)
-    ### netphorestTmpFiles = runNetPhorest(id_seq, id_pos_res, options.compress, options.threads)
-    id_pos_tree_pred = runNetPhorest_one_instance(id_seq, id_pos_res)
-    # sys.stderr.write('\n')
+    # Run motif scoring
+    sys.stderr.write("Running motif scorer\n")
+    id_pos_tree_pred = score_sequences(id_seq, id_pos_res)
 
     # Writing result to STDOUT
     sys.stderr.write("Writing results\n")
     sys.stdout.write(
-        "#Name\tPosition\tTree\tNetPhorest Group\tKinase/Phosphatase/Phospho-binding domain\tNetworKIN score\tNetPhorest probability\tSTRING score\tTarget STRING ID\tKinase/Phosphatase/Phospho-binding domain STRING ID\tTarget description\tKinase/Phosphatase/Phospho-binding domain description\tTarget Name\tKinase/Phosphatase/Phospho-binding domain Name\tPeptide sequence window\tIntermediate nodes\n")
-    #for i in range(len(netphorestTmpFiles)):
-    #id_pos_tree_pred = parseNetphorestFile(netphorestTmpFiles[i].name, id_pos_res, options.compress)
+        "#Name\tPosition\tTree\tMotif Group\tKinase/Phosphatase/Phospho-binding domain\tNetworKIN score\tMotif probability\tSTRING score\tTarget STRING ID\tKinase/Phosphatase/Phospho-binding domain STRING ID\tTarget description\tKinase/Phosphatase/Phospho-binding domain description\tTarget Name\tKinase/Phosphatase/Phospho-binding domain Name\tPeptide sequence window\tIntermediate nodes\n")
     if options.path == "direct":
         dir_likelihood_conversion_tbl = os.path.join(options.datadir, "likelihood_conversion_table_direct")
     elif options.path == "indirect":
@@ -1380,16 +1143,10 @@ if __name__ == '__main__':
         blastDir = os.environ['BLAST_PATH']
     except:
         blastDir = ""
-    # NETPHOREST
-    try:
-        netphorest_bin = os.environ['NETPHOREST_PATH']
-    except:
-        netphorest_bin = ""
+    # Binary option removed; motif scoring now uses the Python atlas scorer
 
     usage = "usage: %prog [options] organism FASTA-file [sites-file]"
     parser = OptionParser(usage=usage, version="%prog 3.0")
-    parser.add_option("-n", "--netphorest", dest="netphorest_bin", default=netphorest_bin,
-                      help="set the location of the NetPhorest binary, overwrites the 'NETPHOREST_PATH' environmental variable. [ENV: %default]")
     parser.add_option("-b", "--blast", dest="blast", default=blastDir,
                       help="set the directory for the BLAST binaries (formatdb and blastall), overwrites the 'BLAST_PATH' environmental variable. [ENV: %default]")
     parser.add_option("-m", "--mode", dest="mode", default=False,
@@ -1438,7 +1195,6 @@ if __name__ == '__main__':
     try:
         fn_fasta = args[1]
         fn_blast_output = "%s.%s.blast.out" % (fn_fasta, organism)
-        fn_netphorest_output = "%s.%s.netphorest.out" % (fn_fasta, organism)
         fastafile = open(fn_fasta, 'r')
     except:
         sys.stderr.write("%s" % args)
@@ -1454,17 +1210,13 @@ if __name__ == '__main__':
     if options.blast:
         blastDir = options.blast
 
-    # NETPHOREST
-    if options.netphorest_bin:
-        netphorest_bin = options.netphorest_bin
-
     # Show runtime parameters
     if (options.verbose):
         sys.stderr.write(
             '\nPredicting using parameters as follows:\nOrganism:\t%s\nFastaFile:\t%s\n' % (organism, fn_fasta))
         sys.stderr.write('Threads:\t%s\nCompress:\t%s\n' % (options.threads, options.compress))
         if options.string_for_uncovered:
-            sys.stderr.write("Use STRING likelihood when the kinases is not covered NetPhorest.\n")
+            sys.stderr.write("Use STRING likelihood when kinases are not covered by the motif atlas.\n")
         if sitesfile:
             sys.stderr.write('Sitesfile:\t%s\n' % sitesfile)
         else:
@@ -1472,6 +1224,5 @@ if __name__ == '__main__':
         if options.mode:
             sys.stderr.write('Mode:\t\t%s\n' % options.mode)
         sys.stderr.write("Blast dir: %s" % blastDir)
-        sys.stderr.write("NetPhorest binary: %s" % netphorest_bin)
         sys.stderr.write('\n')
     Main()

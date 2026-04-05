@@ -157,6 +157,15 @@ def read_fasta_file(path: str) -> dict[str, str]:
     current_id: str | None = None
     chunks: list[str] = []
 
+    def _parse_fasta_id(header: str) -> str:
+        header = header.strip()
+        token = header.split(None, 1)[0]
+        if token.startswith(("sp|", "tr|")):
+            parts = token.split("|")
+            if len(parts) >= 2 and parts[1]:
+                return parts[1]
+        return token
+
     with open(path, encoding="utf-8") as handle:
         for raw_line in handle:
             line = raw_line.strip()
@@ -165,7 +174,7 @@ def read_fasta_file(path: str) -> dict[str, str]:
             if line.startswith(">"):
                 if current_id is not None:
                     id_seq[current_id] = "".join(chunks)
-                current_id = line[1:].split("_", 1)[0]
+                current_id = _parse_fasta_id(line[1:])
                 chunks = []
                 continue
             chunks.append(aminoacids.sub("", line))

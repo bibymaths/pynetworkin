@@ -44,7 +44,7 @@ UNIPROT_FASTA_URL = "https://rest.uniprot.org/uniprotkb/{accession}.fasta"
 UNIPROT_SEARCH_URL = "https://rest.uniprot.org/uniprotkb/search"
 UNIPROT_IDMAPPING_RUN_URL = "https://rest.uniprot.org/idmapping/run"
 UNIPROT_IDMAPPING_STATUS_URL = "https://rest.uniprot.org/idmapping/status/{job_id}"
-UNIPROT_IDMAPPING_RESULTS_URL = "https://rest.uniprot.org/idmapping/uniprotkb/results/{job_id}"
+UNIPROT_IDMAPPING_DETAILS_URL = "https://rest.uniprot.org/idmapping/details/{job_id}"
 
 UNIPROT_BATCH_SIZE = 50   # max accessions per search request
 MAX_RETRIES = 3
@@ -301,6 +301,20 @@ class MaxQuantProcessor:
             logger.warning("ID-mapping submission failed: %s", exc)
             return None
 
+    async def _get_idmapping_results_url(
+        self,
+        client: httpx.AsyncClient,
+        job_id: str,
+    ) -> str | None:
+        """Return the UniProt redirect URL for a finished ID-mapping job."""
+        resp = await client.get(
+            UNIPROT_IDMAPPING_DETAILS_URL.format(job_id=job_id),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        return payload.get("redirectURL")
+
     async def _poll_idmapping_results(
         self,
         client: httpx.AsyncClient,
@@ -308,27 +322,39 @@ class MaxQuantProcessor:
     ) -> list[dict[str, str]]:
         """Poll until an ID-mapping job finishes; return result list."""
         deadline = time.monotonic() + IDMAPPING_POLL_MAX
+        status_url = UNIPROT_IDMAPPING_STATUS_URL.format(job_id=job_id)
+
         while time.monotonic() < deadline:
             await asyncio.sleep(IDMAPPING_POLL_INTERVAL)
             try:
-                status_resp = await client.get(
-                    UNIPROT_IDMAPPING_STATUS_URL.format(job_id=job_id),
-                    timeout=15,
-                )
+                status_resp = await client.get(status_url, timeout=15)
                 status_resp.raise_for_status()
                 payload = status_resp.json()
-                if "jobStatus" in payload and payload["jobStatus"] != "FINISHED":
+
+                # UniProt may return {"jobStatus": "RUNNING"} while the job is
+                # still in progress, but once the job is ready the same endpoint
+                # may already return the results payload directly.
+                job_status = payload.get("jobStatus")
+                if job_status in {"NEW", "RUNNING"}:
                     continue
-                # Either finished inline or a redirect – fetch results
-                results_resp = await client.get(
-                    UNIPROT_IDMAPPING_RESULTS_URL.format(job_id=job_id),
-                    timeout=60,
-                )
+                if job_status in {"ERROR", "FAILURE", "NOT_FOUND"}:
+                    logger.warning("ID-mapping job %s failed with status %s", job_id, job_status)
+                    return []
+                if "results" in payload or "failedIds" in payload:
+                    return payload.get("results", [])
+
+                results_url = await self._get_idmapping_results_url(client, job_id)
+                if not results_url:
+                    logger.warning("No redirect URL returned for ID-mapping job %s", job_id)
+                    return []
+
+                results_resp = await client.get(results_url, timeout=60)
                 results_resp.raise_for_status()
                 results_data = results_resp.json()
                 return results_data.get("results", [])
             except Exception as exc:
                 logger.warning("Error polling ID-mapping job %s: %s", job_id, exc)
+
         logger.warning("ID-mapping job %s timed out", job_id)
         return []
 
@@ -573,10 +599,13 @@ class MaxQuantProcessor:
 
         # FASTA
         with fasta_path.open("w", encoding="utf-8") as fh:
-            for _acc, fasta_text in sequences.items():
-                fh.write(fasta_text)
-                if not fasta_text.endswith("\n"):
-                    fh.write("\n")
+            for acc, fasta_text in sequences.items():
+                lines = fasta_text.strip().splitlines()
+                if not lines:
+                    continue
+                fh.write(f">{acc}\n")
+                for seq_line in lines[1:]:
+                    fh.write(seq_line.strip() + "\n")
         logger.info("Wrote FASTA: %s", fasta_path)
 
         # Cleaned site table

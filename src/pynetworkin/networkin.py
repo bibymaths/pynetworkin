@@ -15,14 +15,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from inputs.phosphosites import fetch_phosphosite
-from inputs.string_network import fetch_string_network
-from likelihood import ConvertScore2L, ReadConversionTableBin, ReadConversionTableFromMemory
-from logger import logger
-from graph_scoring import filter_and_rank_predictions
-from motif_scoring import score_sequences
-from output import write_output
-from recovery import recover_false_negatives
+from pynetworkin.inputs.phosphosites import fetch_phosphosite
+from pynetworkin.inputs.string_network import fetch_string_network
+from pynetworkin.likelihood import ConvertScore2L, ReadConversionTableBin, ReadConversionTableFromMemory
+from pynetworkin.logger import logger
+from pynetworkin.graph_scoring import filter_and_rank_predictions
+from pynetworkin.motif_scoring import score_sequences
+from pynetworkin.output import write_output
+from pynetworkin.recovery import recover_false_negatives
 
 ALPHAS = {"9606": 0.85, "4932": 0.65}
 SPECIES_NAME = {"9606": "human", "4932": "yeast"}
@@ -262,7 +262,7 @@ def set_multilevel_value(mapping: dict[str, Any], keys: list[str], value: Any) -
 
 def read_group_to_domain_map(default_path: str) -> dict[str, dict[str, list[str]]]:
     mapping: dict[str, dict[str, list[str]]] = {}
-    hanno_path = Path("data/hanno_group_human_protein_name_map.tsv")
+    hanno_path = Path(default_path).parent / "hanno_group_human_protein_name_map.tsv"
     source = hanno_path if hanno_path.exists() else Path(default_path)
 
     with open(source, encoding="utf-8") as handle:

@@ -26,7 +26,7 @@ STRING_API_NETWORK = "https://string-db.org/api/tsv/network"
 STRING_API_MAPPING = "https://string-db.org/api/tsv/get_string_ids"
 CACHE_TTL_DAYS = 7
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _DEFAULT_FLAT_FILE = _REPO_ROOT / "data" / "string_data" / "9606.links.v12.0.tsv.gz"
 FALLBACK_TSV = _REPO_ROOT / "data" / "fallback" / "string_sample.tsv"
 

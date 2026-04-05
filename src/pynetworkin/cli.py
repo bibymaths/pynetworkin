@@ -76,13 +76,13 @@ def predict(
             import csv
             import shutil
 
-            from NetworKIN import AppConfig
-            from NetworKIN import run_pipeline as core_run_pipeline
+            from pynetworkin.networkin import AppConfig
+            from pynetworkin.networkin import run_pipeline as core_run_pipeline
 
             del use_kg_embedding
             del string_score
 
-            project_root = Path(__file__).resolve().parent
+            project_root = Path(__file__).resolve().parent.parent.parent
             output_format = format.lower().strip()
             final_output = output.expanduser().resolve()
 

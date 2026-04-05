@@ -1,12 +1,9 @@
 import os
-import sys
 import tempfile
 
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from output import STANDARD_COLUMNS, write_cytoscape, write_tsv
+from pynetworkin.output import STANDARD_COLUMNS, write_cytoscape, write_tsv
 
 SAMPLE_PREDICTIONS = [
     {

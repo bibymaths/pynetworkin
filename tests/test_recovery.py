@@ -1,11 +1,7 @@
-import os
-import sys
-
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from pynetworkin.recovery import recover_false_negatives
 
-from recovery import recover_false_negatives
 
 
 def test_close_pair_is_recovered():

@@ -85,7 +85,7 @@ kg = ["scikit-learn>=1.5", "scipy>=1.13"]
 [tool.ruff]
 target-version = "py310"
 line-length = 100
-exclude = ["alembic/", "legacy_c/", "legacy_web/", "HGNC_Symbol_mapping/", "backup.py", "data/"]
+exclude = ["alembic/", "legacy_c/", "legacy_web/", "HGNC_Symbol_mapping/", "scripts/backup.py", "data/"]
 
 [tool.ruff.lint]
 select = ["E","W","F","I","B","C4","UP","N","SIM","ANN","D"]
@@ -99,7 +99,7 @@ ignore = [
 convention = "numpy"
 
 [tool.ruff.lint.isort]
-known-first-party = ["cli","db","models","graph_scoring","motif_scoring","recovery","output","inputs","pipeline","scripts"]
+known-first-party = ["pynetworkin"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -115,7 +115,7 @@ addopts = "-v --tb=short"
 filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
-source = ["."]
+source = ["src"]
 omit = ["alembic/*", "legacy_c/*", "legacy_web/*", "tests/*", "scripts/*", "docs/*"]
 
 [tool.coverage.report]

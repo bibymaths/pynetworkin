@@ -76,7 +76,7 @@ def ReadGroup2DomainMap(path_group2domain_map):
     c=0
     cl=0
     not_mapped=[]
-    with open("hanno_group_human_protein_name_map.tsv", "w") as output_file:
+    with open("group_human_protein_name_map_curated.tsv", "w") as output_file:
         for line in f.readlines():
             cl+=1
             tokens = line.split()

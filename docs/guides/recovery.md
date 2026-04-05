@@ -38,7 +38,7 @@ Recovered predictions include:
 Adjust the threshold via:
 
 ```python
-from recovery import CONTEXT_RECOVERY_THRESHOLD
+from pynetworkin.recovery import CONTEXT_RECOVERY_THRESHOLD
 # or set programmatically before calling recover_false_negatives()
 ```
 

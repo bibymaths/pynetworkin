@@ -6,7 +6,7 @@
 
 pynetworkin predicts kinase–substrate relationships by combining:
 
-- **Motif scoring** via [pynetphorest](https://github.com/PLACEHOLDER/pynetphorest) (NetPhoREST atlas)
+- **Motif scoring** via [pynetphorest](https://github.com/bibymaths/pynetworkin) (NetPhoREST atlas)
 - **Network context scoring** using the STRING v12.0 protein interaction network
 - **False-negative recovery** to rescue pairs missed by motif scoring alone
 - **Live data sources**: OmniPath REST API and STRING API with local caching
@@ -37,4 +37,4 @@ uvx pynetworkin predict input.fasta -o results.tsv --refresh
 
 ## Architecture
 
-See [ARCHITECTURE.md](https://github.com/PLACEHOLDER/pynetworkin/blob/main/ARCHITECTURE.md) for full technical details.
+See [ARCHITECTURE.md](https://github.com/bibymaths/pynetworkin/blob/main/ARCHITECTURE.md) for full technical details.

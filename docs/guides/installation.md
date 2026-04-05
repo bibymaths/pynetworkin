@@ -9,7 +9,7 @@ pip install pynetworkin
 ## Source install with uv
 
 ```bash
-git clone https://github.com/PLACEHOLDER/pynetworkin
+git clone https://github.com/bibymaths/pynetworkin
 cd pynetworkin
 uv sync
 uv run pynetworkin --help

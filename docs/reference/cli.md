@@ -1,3 +1,3 @@
 # CLI Reference
 
-::: cli
+::: pynetworkin.cli

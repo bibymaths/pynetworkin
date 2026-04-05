@@ -116,7 +116,7 @@ first `_` on the header line.
 | NetworKIN TSV | 3-column TSV | `protein_id \t position \t residue` |
 | ProteomeDiscoverer | 2-column | `protein_id \t phosphopeptide` (phosphosites in lowercase) |
 | MaxQuant | Column header `Proteins` + `Leading` | Direct MaxQuant phosphosite output |
-| Rune's format | column 2 = `phospho` | Space-separated with residue+position in col 2 |
+| Space-separated | column 2 = `phospho` | Space-separated with residue+position in col 2 |
 
 ---
 

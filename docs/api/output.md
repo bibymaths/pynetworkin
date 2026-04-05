@@ -1,3 +1,3 @@
 # Output
 
-::: output
+::: pynetworkin.output

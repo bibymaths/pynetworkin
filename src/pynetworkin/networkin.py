@@ -34,7 +34,7 @@ PENALTY = {
 NETWORKIN_SITE_FILE = 1
 PROTEOME_DISCOVERER_SITE_FILE = 2
 MAX_QUANT_DIRECT_OUTPUT_FILE = 3
-RUNES_SITE_FILE = 4
+LEGACY_SITE_FILE = 4
 MS_MCMC_FILE = 5
 
 
@@ -209,7 +209,7 @@ def detect_site_file_type(path: str) -> int:
     ):
         return MAX_QUANT_DIRECT_OUTPUT_FILE
     if len(tokens) > 1 and tokens[1] == "phospho":
-        return RUNES_SITE_FILE
+        return LEGACY_SITE_FILE
     if Path(path).name.startswith("MS"):
         return MS_MCMC_FILE
 
@@ -393,15 +393,15 @@ def set_multilevel_value(mapping: dict[str, Any], keys: list[str], value: Any) -
 
 def read_group_to_domain_map(default_path: str) -> dict[str, dict[str, list[str]]]:
     mapping: dict[str, dict[str, list[str]]] = {}
-    hanno_path = Path(default_path).parent / "hanno_group_human_protein_name_map.tsv"
-    source = hanno_path if hanno_path.exists() else Path(default_path)
+    curated_path = Path(default_path).parent / "group_human_protein_name_map_curated.tsv"
+    source = curated_path if curated_path.exists() else Path(default_path)
 
     with open(source, encoding="utf-8") as handle:
         for line in handle:
             tokens = line.split()
             if len(tokens) < 3:
                 continue
-            name = tokens[3] if source == hanno_path and len(tokens) > 3 else tokens[2]
+            name = tokens[3] if source == curated_path and len(tokens) > 3 else tokens[2]
             insert_multilevel_list(mapping, tokens[:2], name)
 
     logger.success("Loaded group-to-domain map from {}", source)
@@ -888,7 +888,7 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         elif file_type == MAX_QUANT_DIRECT_OUTPUT_FILE:
             id_pos_res = read_max_quant_sites(config.sites_path)
         else:
-            # handle RUNES and MS_MCMC later...
+            # handle LEGACY_SITE_FILE and MS_MCMC later...
             raise NetworkinError(
                 "Only the basic Networkin site reader was migrated in this core refactor. Add the other adapters next."
             )

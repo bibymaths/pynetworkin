@@ -1,3 +1,3 @@
 # Recovery
 
-::: recovery
+::: pynetworkin.recovery

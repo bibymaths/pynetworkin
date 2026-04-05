@@ -849,8 +849,14 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
         score_src, species_of_conversion_table, tree, player_name = \
         re.findall("conversion_tbl_([a-z]+)_smooth_([a-z]+)_([A-Z0-9]+)_([a-zA-Z0-9_/-]+)",
                    os.path.basename(os.path.splitext(fname)[0]))[0]
-        # Normalise the legacy filename tag to a uniform key name
-        score_src = "motif" if score_src != "string" else "string"
+        # Normalise the legacy filename tag to a uniform in-memory key.
+        # Conversion table files are named either "…_string_…" (STRING co-expression
+        # likelihood) or "…_<motif-scorer>_…" (motif probability likelihood).
+        # Map all non-"string" tags to "motif" so downstream lookups are scorer-agnostic.
+        if score_src == "string":
+            score_src = "string"
+        else:
+            score_src = "motif"
 
         if species_of_conversion_table != species:
             continue

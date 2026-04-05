@@ -1,6 +1,6 @@
 services:
   networkin:
-    image: bibymaths/pynetworkin:latest
+    image: ghcr.io/bibymaths/pynetworkin:latest
     container_name: pynetworkin
     restart: unless-stopped
     volumes:

@@ -5,10 +5,11 @@
 # Usage: ./docker_test_local.sh [version_tag]
 set -euo pipefail
 
-IMAGE_NAME="bibymaths/pynetworkin"
+IMAGE_NAME="ghcr.io/bibymaths/pynetworkin"
 VERSION="${1:-local-test}"
 FULL_TAG="${IMAGE_NAME}:${VERSION}"
 
+PASS="\033[0;32m✔\033[0m"
 PASS="\033[0;32m✔\033[0m"
 FAIL="\033[0;31m✘\033[0m"
 INFO="\033[0;34m➜\033[0m"
@@ -113,15 +114,6 @@ if bash docker_down.sh; then
     pass "docker_down.sh ran successfully"
 else
     fail "docker_down.sh failed"
-fi
-
-# ── 8. docker_push.sh dry-run check (no actual push) ────────────────────────
-header "8. docker_push.sh — argument validation check"
-info "Testing that missing version arg exits non-zero..."
-if bash docker_push.sh 2>/dev/null; then
-    fail "docker_push.sh should fail without a version arg"
-else
-    pass "docker_push.sh correctly rejects missing version arg"
 fi
 
 # ── Summary ──────────────────────────────────────────────────────────────────

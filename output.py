@@ -14,6 +14,7 @@
 
 import pandas as pd
 from pathlib import Path
+from typing import Union
 
 # Column names match the original NetworKIN CSV output exactly
 # (as written by printResult in NetworKIN.py).
@@ -39,7 +40,7 @@ STANDARD_COLUMNS = [
 ]
 
 
-def write_tsv(predictions: list, path) -> None:
+def write_tsv(predictions: list, path: Union[str, Path]) -> None:
     """
     Write predictions to a tab-separated file.
     Columns follow STANDARD_COLUMNS order.
@@ -53,7 +54,7 @@ def write_tsv(predictions: list, path) -> None:
     df.to_csv(path, sep="\t", index=False)
 
 
-def write_cytoscape(predictions: list, path) -> None:
+def write_cytoscape(predictions: list, path: Union[str, Path]) -> None:
     """
     Write Cytoscape-compatible SIF format:
         source \t pp \t target
@@ -71,7 +72,7 @@ def write_cytoscape(predictions: list, path) -> None:
     pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
 
 
-def write_output(predictions: list, path, fmt: str = "tsv") -> None:
+def write_output(predictions: list, path: Union[str, Path], fmt: str = "tsv") -> None:
     """Dispatcher — call write_tsv or write_cytoscape based on fmt."""
     fmt = fmt.lower().strip()
     if fmt in ("tsv", "tab"):

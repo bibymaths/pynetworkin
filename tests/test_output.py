@@ -85,7 +85,7 @@ def test_networkin_score_in_range():
         path = f.name
     write_tsv(SAMPLE_PREDICTIONS, path)
     df = pd.read_csv(path, sep="\t")
-    scored = df[df["recovered"] == False]
+    scored = df[~df["recovered"].astype(str).isin(["True"])]
     assert (scored["NetworKIN score"].between(0.0, 1.0)).all(), \
         "Non-recovered NetworKIN score must be in [0, 1]"
     os.unlink(path)

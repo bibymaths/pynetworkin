@@ -1,93 +1,177 @@
-# NetworKIN_Bayesian
+# PyNetworKIN
 
+**PyNetworKIN** is a Bayesian kinase–substrate prediction pipeline for
+phosphoproteomics. It integrates sequence-motif scoring (via
+[NetPhorest](http://netphorest.info)) with protein-interaction context (via the
+[STRING](https://string-db.org) network) to predict which kinases, phosphatases, or
+phospho-binding domains are responsible for observed phosphorylation events.
 
+This repository is a modernised Python 3 port of the original NetworKIN 3.0 tool
+(Linding, Jensen, Horn & Kim, 2005–2013), extended to support STRING v12 protein
+interaction data.
 
-## Getting started
+---
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Features
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+- Predicts kinase/phosphatase/phospho-binding domain substrates from FASTA +
+  phosphosite input.
+- Supports human (9606) and yeast (4932) proteomes.
+- Accepts multiple phosphosite input formats: NetworKIN TSV, ProteomeDiscoverer,
+  MaxQuant, and custom formats.
+- Integrates sequence motif posterior probabilities with STRING network proximity
+  scores using pre-calibrated Bayesian likelihood-ratio tables.
+- Outputs per-site predictions as a CSV file in the `results/` directory.
 
-## Add your files
+---
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+## Requirements
 
-```
-cd existing_repo
-git remote add origin https://ford.biologie.hu-berlin.de/signalling_group/networkin_bayesian.git
-git branch -M main
-git push -uf origin main
-```
+| Dependency | Version | Notes |
+|---|---|---|
+| Python | ≥ 3.6 | |
+| NumPy | any | |
+| Pandas | any | (used by `filter_sites.py`) |
+| NCBI BLAST+ | ≥ 2.9 | `blastp` must be on `PATH` or supplied via `-b` |
+| NetPhorest | — | C binary in `netphorest/`; see compilation instructions below |
 
-## Integrate with your tools
-
-- [ ] [Set up project integrations](https://ford.biologie.hu-berlin.de/signalling_group/networkin_bayesian/-/settings/integrations)
-
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+---
 
 ## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+
+### 1. Compile NetPhorest
+
+```bash
+cd netphorest
+cc -O3 -o netphorest netphorest.c -lm
+cd ..
+```
+
+> **Note:** Avoid GCC 4.x — it causes silent crashes in the NetPhorest binary.
+> GCC 5+ or Clang are recommended.
+
+### 2. Install BLAST+
+
+Download from [NCBI BLAST+](https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/).
+Ensure `blastp` and `makeblastdb` are on your `PATH`, or pass the directory with `-b`.
+
+### 3. Install Python dependencies
+
+```bash
+pip install numpy pandas
+```
+
+---
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```
+python3 NetworKIN.py [options] <organism> <FASTA-file> [sites-file]
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+| Argument | Description |
+|---|---|
+| `organism` | NCBI taxon ID: `9606` (human) or `4932` (yeast) |
+| `FASTA-file` | FASTA file with protein sequences; IDs must match the sites file |
+| `sites-file` | Phosphosite file (optional; if omitted, all S/T/Y residues are predicted) |
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### Key options
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+| Flag | Default | Description |
+|---|---|---|
+| `-n` / `--netphorest` | `$NETPHOREST_PATH` | Path to the NetPhorest binary |
+| `-b` / `--blast` | `$BLAST_PATH` | Directory containing BLAST+ binaries |
+| `-d` / `--data` | `./data` | Directory with reference data files |
+| `-p` / `--path` | `direct` | STRING path type: `direct` or `indirect` |
+| `-t` / `--threads` | `1` | Number of BLAST threads |
+| `-v` / `--verbose` | off | Print detailed progress to stderr |
+| `-u` / `--uncovered` | off | Use STRING likelihood for kinases not covered by NetPhorest |
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+### Example
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+```bash
+python3 NetworKIN.py \
+    -n netphorest/netphorest \
+    -d data \
+    9606 \
+    test.fas \
+    test.tsv
+```
+
+Results are written to `results/<fasta-filename>.result.csv`.
+
+---
+
+## Input formats
+
+### FASTA file
+
+Standard FASTA format. Protein IDs are taken as everything between `>` and the
+first `_` on the header line.
+
+### Sites file (auto-detected)
+
+| Format | Detection | Description |
+|---|---|---|
+| NetworKIN TSV | 3-column TSV | `protein_id \t position \t residue` |
+| ProteomeDiscoverer | 2-column | `protein_id \t phosphopeptide` (phosphosites in lowercase) |
+| MaxQuant | Column header `Proteins` + `Leading` | Direct MaxQuant phosphosite output |
+| Rune's format | column 2 = `phospho` | Space-separated with residue+position in col 2 |
+
+---
+
+## Output format
+
+Results CSV columns:
+
+| Column | Description |
+|---|---|
+| Name | Target protein ID |
+| Position | Phosphosite position in the protein |
+| Tree | NetPhorest tree (KIN, SH2, PTP, 1433, …) |
+| NetPhorest Group | NetPhorest classifier group |
+| Kinase/Phosphatase/Phospho-binding domain | Predicted enzyme |
+| NetworKIN score | Integrated Bayesian score (≥ 0.02 reported) |
+| NetPhorest probability | Raw NetPhorest posterior |
+| STRING score | STRING best-path proximity score |
+| Target STRING ID | Ensembl protein ID of the substrate |
+| Kinase STRING ID | Ensembl protein ID of the enzyme |
+| Target Name | Human-readable substrate name |
+| Kinase Name | Human-readable enzyme name |
+| Target description | STRING functional description of substrate |
+| Kinase description | STRING functional description of enzyme |
+| Peptide sequence window | ±7 aa window around the phosphosite |
+| Intermediate nodes | Best-path intermediate proteins in STRING |
+
+---
+
+## Repository structure
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed description of the code
+structure and execution flow.
+
+---
+
+## Data sources
+
+- **NetPhorest**: kinase-group motif models.
+  Source: `netphorest/`; original publication: [Miller *et al.*, 2008](https://doi.org/10.1016/j.celrep.2019.03.089).
+- **STRING v12**: human protein interactions and sequences.
+  Downloaded from [string-db.org](https://string-db.org).
+- **HGNC symbol mapping**: `HGNC_Symbol_mapping/`.
+
+---
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+See original NetworKIN licence terms. The NetworKIN algorithm is described in:
+
+> Linding R, Jensen LJ, Ostheimer GJ, *et al.* (2007). Systematic discovery of
+> in vivo phosphorylation networks. *Cell*, 129(7), 1415–1426.
+
+---
+
+## Authors
+
+Original NetworKIN: Rune Linding, Lars Juhl Jensen, Heiko Horn & Jinho Kim (2005–2013).  
+Python 3 modernisation and STRING v12 integration: see repository contributors.

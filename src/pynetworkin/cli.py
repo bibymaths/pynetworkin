@@ -199,8 +199,8 @@ def predict(
             else:
                 motif_scored = _write_sif_from_tsv(raw_tsv, final_output)
             results = {
-                "total": total_predictions,
-                "motif_scored": motif_scored,
+                "total": total_predictions-1,
+                "motif_scored": motif_scored-1,
                 "recovered": recovered_predictions,
                 "output_file": str(final_output),
             }

@@ -318,5 +318,98 @@ def cache(
     console.print(table)
 
 
+@app.command(name="prepare-maxquant")
+def prepare_maxquant(
+    input_file: Path = typer.Argument(  # noqa: B008
+        ...,
+        help="MaxQuant Phospho (STY)Sites.txt file.",
+    ),
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("pynetworkin_input"),
+        "--output-dir",
+        "-o",
+        help="Directory for output files (created if absent).",
+    ),
+    rate_limit: float = typer.Option(
+        0.1,
+        "--rate-limit",
+        help="Minimum delay (seconds) between UniProt API requests.",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
+) -> None:
+    r"""[bold green]Prepare[/] a MaxQuant Site Table for PyNetworKIN.
+
+    Cleans protein IDs, downloads FASTA sequences from UniProt, and writes:
+
+    \b
+      cleaned_proteins.fasta  – FASTA ready for PyNetworKIN
+      cleaned_sites.txt       – Site table with normalised IDs
+      id_mapping.csv          – original → cleaned ID mapping
+      processing_report.json  – statistics and errors
+    """
+    import logging
+
+    console.print(Panel(BANNER, border_style="dark_blue", expand=False))
+
+    if verbose:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
+
+    if not input_file.exists():
+        console.print(f"[bold red]Error:[/] input file not found: {input_file}")
+        raise typer.Exit(code=1)
+
+    from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+
+    from pynetworkin.inputs.maxquant_processor import MaxQuantProcessor
+
+    t0 = time.time()
+    processor = MaxQuantProcessor(rate_limit_delay=rate_limit)
+
+    with Progress(
+        SpinnerColumn(style="cyan"),
+        TextColumn("[bold cyan]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task("Processing MaxQuant site table …", total=None)
+        try:
+            results = processor.process_site_table(
+                input_file=input_file,
+                output_dir=output_dir,
+            )
+            progress.update(task, description="[bold green]Done[/]", completed=1)
+        except Exception as exc:
+            progress.update(task, description="[bold red]Failed[/]")
+            console.print(f"[bold red]Error:[/] {exc}")
+            raise typer.Exit(code=1) from exc
+
+    elapsed = time.time() - t0
+    report = results["report"]
+
+    table = Table(title="MaxQuant Processing Summary", box=box.ROUNDED, border_style="cyan")
+    table.add_column("Metric", style="bold cyan")
+    table.add_column("Value", style="bold white")
+    table.add_row("Total site-table rows", str(report.total_rows))
+    table.add_row("Unique original IDs", str(report.unique_original_ids))
+    table.add_row("Unique cleaned IDs", str(report.unique_cleaned_ids))
+    table.add_row("Contaminants removed", str(report.contaminants_removed))
+    table.add_row("Reversed hits removed", str(report.reverse_removed))
+    table.add_row("UniProt IDs", str(report.uniprot_ids))
+    table.add_row("RefSeq IDs", str(report.refseq_ids))
+    table.add_row("Ensembl IDs", str(report.ensembl_ids))
+    table.add_row("Other IDs", str(report.other_ids))
+    table.add_row("Sequences downloaded", str(report.sequences_downloaded))
+    table.add_row("Sequences missing", str(len(report.sequences_missing)))
+    table.add_row("Output directory", str(output_dir))
+    table.add_row("Elapsed time", f"{elapsed:.2f}s")
+    console.print(table)
+
+    if report.errors:
+        console.print(f"[bold yellow]Warnings/Errors ({len(report.errors)}):[/]")
+        for err in report.errors:
+            console.print(f"  [yellow]•[/] {err}")
+
+
 if __name__ == "__main__":
     app()

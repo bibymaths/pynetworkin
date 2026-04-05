@@ -822,8 +822,8 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
     ALPHA = ALPHAS[organism]
     species = dSpeciesName[organism]
 
-    fas = open(fn_fasta, 'r')
-    csv_filename = os.path.join(res_dir, f'{fas.name}.result.tsv')
+    from pathlib import Path
+    csv_filename = os.path.join(res_dir, f"{Path(fn_fasta).name}.result.tsv")
     predictions = []
 
     dLRConvTbl = {}
@@ -1067,8 +1067,7 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
         #print('preds not mapped:')
         #print(pred_not_mapped)
 
-        logger.warning("names not mapped:")
-        logger.warning("{}", len(np.unique(name_not_mapped)))
+        logger.warning("names not mapped: {}", len(np.unique(name_not_mapped)))
 
     # --- False-negative recovery ---
     # Build motif_score_dict: {(kinase_string_id, substrate_string_id): motif_score}

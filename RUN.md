@@ -117,7 +117,7 @@ No external files need to be downloaded — the package bundles all model data.
 This run uses only bundled data and requires no internet access or database.
 
 ```bash
-python -m cli predict data/fallback/test_input.fasta \
+pynetworkin predict data/fallback/test_input.fasta \
   --output results.tsv --format tsv
 ```
 
@@ -130,14 +130,14 @@ sources are unavailable.
 
 ```bash
 # Force re-download of all live data (OmniPath + STRING)
-python -m cli predict data/fallback/test_input.fasta \
+pynetworkin predict data/fallback/test_input.fasta \
   --output results.tsv --refresh
 ```
 
 ### With a custom phosphosite file
 
 ```bash
-python -m cli predict my_sequences.fasta \
+pynetworkin predict my_sequences.fasta \
   --sites data/my_phosphosites.tsv \
   --output results.tsv
 ```
@@ -145,16 +145,17 @@ python -m cli predict my_sequences.fasta \
 ### With ProteomeDiscoverer or MaxQuant input
 
 ```bash
-# ProteomeDiscoverer format
-python -m cli predict proteome.fasta \
-  --sites proteome_discoverer_output.txt \
-  --format pd \
+# ProteomeDiscoverer format — pass the FASTA and the peptide list (.txt)
+# File format is auto-detected (2-column protein-ID / peptide file)
+pynetworkin predict proteome.fasta \
+  --sites proteome_discoverer_peptides.txt \
   --output results.tsv
 
-# MaxQuant format
-python -m cli predict proteome.fasta \
-  --sites maxquant_phospho_sites.txt \
-  --format mq \
+# MaxQuant format — pass the FASTA and the MaxQuant phosphosite table (.res)
+# File format is auto-detected (tab-separated with "Proteins" and
+# "Positions within proteins" header columns)
+pynetworkin predict proteome.fasta \
+  --sites maxquant_phospho_sites.res \
   --output results.tsv
 ```
 
@@ -165,7 +166,7 @@ python -m cli predict proteome.fasta \
 ### TSV (default)
 
 ```bash
-python -m cli predict sequences.fasta --output results.tsv --format tsv
+pynetworkin predict sequences.fasta --output results.tsv --format tsv
 ```
 
 Output columns:  
@@ -178,7 +179,7 @@ Output columns:
 ### Cytoscape-compatible edge list
 
 ```bash
-python -m cli predict sequences.fasta --output network.tsv --format cytoscape
+pynetworkin predict sequences.fasta --output network.tsv --format cytoscape
 ```
 
 Output columns: `source`, `interaction`, `target`, `weight`
@@ -188,17 +189,6 @@ Output columns: `source`, `interaction`, `target`, `weight`
 False-negative recovery is enabled by default.  It uses STRING graph distance
 to rescue kinase–substrate pairs where the motif score fell below threshold but
 the proteins are close in the interaction network.
-
-```bash
-# Disable recovery
-python -m cli predict sequences.fasta --output results.tsv --no-recovery
-```
-
-### KG embedding (optional, requires additional setup)
-
-```bash
-python -m cli predict sequences.fasta --output results.tsv --kg-embedding
-```
 
 ---
 
@@ -212,7 +202,7 @@ pytest tests/ -v --cov=.
 pytest tests/test_motif_scoring.py -v
 
 # Quick smoke test using fallback data
-python -m cli predict data/fallback/test_input.fasta --output /tmp/test.tsv
+pynetworkin predict data/fallback/test_input.fasta --output /tmp/test.tsv
 wc -l /tmp/test.tsv     # should be > 1
 ```
 
@@ -247,7 +237,7 @@ python scripts/generate_sample_data.py
 ```
 pynetworkin/
 ├── NetworKIN.py                 # Main orchestration script & CLI entry point
-├── cli/                         # CLI module (python -m cli predict …)
+├── cli/                         # CLI entry-point (pynetworkin predict …)
 ├── inputs/
 │   ├── phosphosites.py          # Phosphosite fetching (OmniPath → PSP → fallback)
 │   └── string_network.py        # STRING network (flat file → REST → fallback)

@@ -43,6 +43,8 @@ from string import *
 from likelihood import ReadConversionTableBin
 from likelihood import ConvertScore2L
 from motif_scoring import score_sequences
+from inputs.phosphosites import fetch_phosphosite
+from inputs.string_network import fetch_string_network
 import platform
 from itertools import chain
 import numpy as np
@@ -1089,6 +1091,12 @@ def Main():
     else:
         id_pos_res = {}
 
+    # ORIGINAL: sites loaded exclusively from user-provided flat file (phospho.tsv / *.dat dumps).
+    # NEW: fetch live reference phosphorylation-site data from PhosphoSitePlus (7-day cache).
+    # phosphosite_df is available here for downstream enrichment or validation against id_pos_res.
+    sys.stderr.write("Fetching live phosphorylation site reference data\n")
+    phosphosite_df = fetch_phosphosite(refresh=options.refresh)  # noqa: F841
+
 
     if organism == "9606":
         path_group2domain_map = os.path.join(options.datadir, "group_human_protein_name_map.tsv")
@@ -1113,6 +1121,15 @@ def Main():
 
     # Used if only ensembl of the same version used
     # incoming2string, string2incoming = mapOne2one(id_seq)
+
+    # ORIGINAL: tree_pred_string_data loaded exclusively from pre-processed local gzip file:
+    #   fn_bestpath = "%s/%s.bestpath_0340_0950.v9.tsv.gz" % (os.path.join(datadir, "string_data"), organism)
+    # NEW: fetch live STRING functional association network via REST API (7-day cache).
+    # string_df (protein_a, protein_b, combined_score) is available here for downstream use.
+    # The pre-processed local file is still loaded below for the pipeline's internal scoring format.
+    sys.stderr.write("Fetching live STRING network data\n")
+    all_uniprot_ids = list(id_seq.keys())
+    string_df = fetch_string_network(proteins=all_uniprot_ids, refresh=options.refresh)  # noqa: F841
 
     # Load the STRING network data
     sys.stderr.write("Loading STRING network\n")
@@ -1177,6 +1194,8 @@ if __name__ == '__main__':
     parser.add_option("-d", "--data", dest="datadir",
                       default=os.path.join(os.path.split(os.path.realpath(sys.argv[0]))[0], 'data'),
                       help="location for the additional files like the pre-computed STRING network, STRING sequence database etc. [default: %default]")
+    parser.add_option("--refresh", dest="refresh", default=False, action="store_true",
+                      help="force re-download of live data (PhosphoSitePlus, STRING) even if a valid 7-day cache exists [default: %default]")
     # if os.environ.has_key("TMPDIR"):
     #	parser.add_option("--tmp", dest="tmpdir", default=os.environ["TMPDIR"],
     #									help="location for the temporary files [default: %default]")

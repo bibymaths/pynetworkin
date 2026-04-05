@@ -97,10 +97,10 @@ def _fetch_omnipath() -> pd.DataFrame:
 
     # Map OmniPath columns to our schema
     rename = {
-        "substrate":            "uniprot_id",
+        "substrate": "uniprot_id",
         "substrate_genesymbol": "gene",
-        "residue_type":         "site_residue",
-        "residue_offset":       "position",
+        "residue_type": "site_residue",
+        "residue_offset": "position",
     }
     df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
 
@@ -147,10 +147,10 @@ def _load_local_phosphositeplus() -> pd.DataFrame:
 
     # Map PSP columns to our schema
     rename = {
-        "acc_id":     "uniprot_id",
-        "gene":       "gene",
-        "mod_rsd":    "site_residue",
-        "domain":     "position",
+        "acc_id": "uniprot_id",
+        "gene": "gene",
+        "mod_rsd": "site_residue",
+        "domain": "position",
         "site_+/-7_aa": "sequence_window",
     }
     df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})

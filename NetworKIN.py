@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import glob
 import gzip
 import os
 import platform
@@ -9,17 +10,16 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-import glob
 import numpy as np
 import pandas as pd
 
+from inputs.phosphosites import fetch_phosphosite
+from inputs.string_network import fetch_string_network
 from likelihood import ConvertScore2L, ReadConversionTableBin
 from logger import logger
 from motif_scoring import score_sequences
-from inputs.phosphosites import fetch_phosphosite
-from inputs.string_network import fetch_string_network
 from output import write_output
 from recovery import recover_false_negatives
 
@@ -156,7 +156,7 @@ def read_fasta_file(path: str) -> dict[str, str]:
     current_id: str | None = None
     chunks: list[str] = []
 
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         for raw_line in handle:
             line = raw_line.strip()
             if not line or line.startswith(";"):
@@ -177,7 +177,7 @@ def read_fasta_file(path: str) -> dict[str, str]:
 
 
 def detect_site_file_type(path: str) -> int:
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         line = handle.readline().strip()
 
     if not line:
@@ -206,7 +206,7 @@ def detect_site_file_type(path: str) -> int:
 
 def read_networkin_sites(path: str) -> dict[str, dict[int, str]]:
     id_pos_res: dict[str, dict[int, str]] = {}
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, start=1):
             tokens = line.rstrip("\n").split("\t")
             if len(tokens) < 2:
@@ -216,7 +216,9 @@ def read_networkin_sites(path: str) -> dict[str, dict[int, str]]:
             try:
                 pos = int(tokens[1])
             except ValueError as exc:
-                raise NetworkinError(f"Invalid position at line {line_no}: {line.rstrip()}") from exc
+                raise NetworkinError(
+                    f"Invalid position at line {line_no}: {line.rstrip()}"
+                ) from exc
             residue = tokens[2].strip() if len(tokens) > 2 else ""
             id_pos_res.setdefault(protein_id, {})[pos] = residue
 
@@ -226,7 +228,7 @@ def read_networkin_sites(path: str) -> dict[str, dict[int, str]]:
 
 def read_sheet(path: str, offset: int = 0) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         for _ in range(offset):
             next(handle)
         columns = handle.readline().strip().split("\t")
@@ -262,7 +264,7 @@ def read_group_to_domain_map(default_path: str) -> dict[str, dict[str, list[str]
     hanno_path = Path("data/hanno_group_human_protein_name_map.tsv")
     source = hanno_path if hanno_path.exists() else Path(default_path)
 
-    with open(source, "r", encoding="utf-8") as handle:
+    with open(source, encoding="utf-8") as handle:
         for line in handle:
             tokens = line.split()
             if len(tokens) < 3:
@@ -274,8 +276,9 @@ def read_group_to_domain_map(default_path: str) -> dict[str, dict[str, list[str]
     return mapping
 
 
-def read_alias_files(organism: str, datadir: str, map_group_to_domain: dict[str, dict[str, list[str]]]) -> tuple[
-    dict[str, str], dict[str, str], dict[str, list[str]]]:
+def read_alias_files(
+    organism: str, datadir: str, map_group_to_domain: dict[str, dict[str, list[str]]]
+) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]]]:
     alias_hash: dict[str, str] = {}
     desc_hash: dict[str, str] = {}
     name_hash: dict[str, list[str]] = {}
@@ -314,12 +317,15 @@ def read_alias_files(organism: str, datadir: str, map_group_to_domain: dict[str,
     for seq_id, aliases in name_hash.items():
         alias_hash[seq_id] = next((a for a in aliases if a in allowed_names), seq_id)
 
-    logger.success("Loaded {} preferred aliases and {} descriptions", len(alias_hash), len(desc_hash))
+    logger.success(
+        "Loaded {} preferred aliases and {} descriptions", len(alias_hash), len(desc_hash)
+    )
     return alias_hash, desc_hash, name_hash
 
 
-def map_peptides_to_string(config: AppConfig, id_pos_res: dict[str, dict[int, str]], id_seq: dict[str, str]) -> tuple[
-    dict[str, dict[str, bool]], dict[str, dict[str, bool]]]:
+def map_peptides_to_string(
+    config: AppConfig, id_pos_res: dict[str, dict[int, str]], id_seq: dict[str, str]
+) -> tuple[dict[str, dict[str, bool]], dict[str, dict[str, bool]]]:
     logger.header("Mapping query proteins to STRING IDs via BLAST")
     incoming2string: dict[str, dict[str, bool]] = {}
     string2incoming: dict[str, dict[str, bool]] = {}
@@ -348,12 +354,15 @@ def map_peptides_to_string(config: AppConfig, id_pos_res: dict[str, dict[int, st
             blastp_exe = test_blastp
             makeblastdb_exe = os.path.join(resolved_blast_dir, "makeblastdb")
         else:
-            logger.warning("blastp not found in '{}'. Falling back to system PATH.", resolved_blast_dir)
+            logger.warning(
+                "blastp not found in '{}'. Falling back to system PATH.", resolved_blast_dir
+            )
 
     # Final safety check: does blastp exist in the system at all?
     if not shutil.which(blastp_exe):
         raise CommandError(
-            "blastp is not installed or not found in system PATH. Please install NCBI BLAST+ (e.g., sudo apt-get install ncbi-blast+)")
+            "blastp is not installed or not found in system PATH. Please install NCBI BLAST+ (e.g., sudo apt-get install ncbi-blast+)"
+        )
 
     if not os.path.isfile(blast_db + ".pin"):
         command = f'{makeblastdb_exe} -in "{blast_db}" -out "{blast_db}" -parse_seqids -dbtype prot'
@@ -361,13 +370,13 @@ def map_peptides_to_string(config: AppConfig, id_pos_res: dict[str, dict[int, st
         run_command(command)
 
     command = (
-        f'{blastp_exe} -num_threads {config.threads} -evalue 1e-10 '
+        f"{blastp_exe} -num_threads {config.threads} -evalue 1e-10 "
         f'-db "{blast_db}" -query "{query_path}" -outfmt 6 | sort -k12gr'
     )
 
     if config.fast and os.path.isfile(config.blast_output_path):
         logger.info("Using cached BLAST output: {}", config.blast_output_path)
-        with open(config.blast_output_path, "r", encoding="utf-8") as handle:
+        with open(config.blast_output_path, encoding="utf-8") as handle:
             blast_lines = handle.read().splitlines()
     else:
         blast_lines = run_command(command).splitlines()
@@ -401,9 +410,12 @@ def map_peptides_to_string(config: AppConfig, id_pos_res: dict[str, dict[int, st
     return incoming2string, string2incoming
 
 
-def load_string_data(config: AppConfig, string2incoming: dict[str, dict[str, bool]], alias_hash: dict[str, str]) -> \
-dict[str, dict[str, dict[str, Any]]]:
-    fn_bestpath = os.path.join(config.datadir, "string_data", f"{config.organism}.bestpath_0340_0950.v9.tsv.gz")
+def load_string_data(
+    config: AppConfig, string2incoming: dict[str, dict[str, bool]], alias_hash: dict[str, str]
+) -> dict[str, dict[str, dict[str, Any]]]:
+    fn_bestpath = os.path.join(
+        config.datadir, "string_data", f"{config.organism}.bestpath_0340_0950.v9.tsv.gz"
+    )
     if not os.path.isfile(fn_bestpath):
         raise NetworkinError(f"Best path file missing: {fn_bestpath}")
 
@@ -434,8 +446,9 @@ dict[str, dict[str, dict[str, Any]]]:
     return tree_pred_string_data
 
 
-def _parse_string_line(tokens: list[str], organism: str, alias_hash: dict[str, str]) -> tuple[
-                                                                                            str, str, str, float, float, str] | None:
+def _parse_string_line(
+    tokens: list[str], organism: str, alias_hash: dict[str, str]
+) -> tuple[str, str, str, float, float, str] | None:
     if len(tokens) == 8:
         tree, group, name, string1, string2, s_direct, s_indirect, path = tokens
         return name, string1, string2, float(s_direct), float(s_indirect), path
@@ -472,28 +485,40 @@ def load_conversion_tables(dir_path: str, species: str, verbose: bool = False) -
         conversion_tbl = ReadConversionTableBin(fname)
         set_multilevel_value(tables, [species_name, tree, player_name, score_kind], conversion_tbl)
         if verbose:
-            logger.muted("Loaded conversion table: {} {} {} {}", species_name, tree, player_name, score_kind)
+            logger.muted(
+                "Loaded conversion table: {} {} {} {}", species_name, tree, player_name, score_kind
+            )
 
     logger.success("Loaded likelihood conversion tables for species {}", species)
     return tables
 
 
-def filter_and_rank_predictions(predictions: list[dict[str, Any]], min_networkin: float = 2.0, min_motif: float = 0.05,
-                                top_k: int = 5) -> list[dict[str, Any]]:
+def filter_and_rank_predictions(
+    predictions: list[dict[str, Any]],
+    min_networkin: float = 2.0,
+    min_motif: float = 0.05,
+    top_k: int = 5,
+) -> list[dict[str, Any]]:
     df = pd.DataFrame(predictions)
     if df.empty:
         logger.warning("No predictions available after scoring")
         return predictions
 
-    filtered = df[(df["NetworKIN score"] > min_networkin) & (df["Motif probability"] > min_motif)].copy()
-    filtered = filtered.sort_values(["Name", "Position", "NetworKIN score"], ascending=[True, True, False])
+    filtered = df[
+        (df["NetworKIN score"] > min_networkin) & (df["Motif probability"] > min_motif)
+    ].copy()
+    filtered = filtered.sort_values(
+        ["Name", "Position", "NetworKIN score"], ascending=[True, True, False]
+    )
     filtered = filtered.groupby(["Name", "Position"], as_index=False).head(top_k)
 
     logger.success("Retained {} predictions after ranking and filtering", len(filtered))
     return filtered.to_dict(orient="records")
 
 
-def _select_conversion_tables(dlr: dict[str, Any], species: str, tree: str, name: str) -> tuple[Any, Any]:
+def _select_conversion_tables(
+    dlr: dict[str, Any], species: str, tree: str, name: str
+) -> tuple[Any, Any]:
     if species == "human" and tree in ["1433", "BRCT", "WW", "PTB", "WD40", "FHA"]:
         return dlr[species]["SH2"]["general"]["motif"], dlr[species]["SH2"]["general"]["string"]
 
@@ -504,23 +529,23 @@ def _select_conversion_tables(dlr: dict[str, Any], species: str, tree: str, name
 
 
 def build_prediction_row(
-        target_id: str,
-        pos: int,
-        residue: str,
-        tree: str,
-        pred: str,
-        name: str,
-        peptide: str,
-        motif_score: float,
-        string1: str,
-        string2: str,
-        string_score: float,
-        path: str,
-        networkin_score: float,
-        string_alias: dict[str, str],
-        string_desc: dict[str, str],
-        recovered: bool = False,
-        recovery_method: str = "",
+    target_id: str,
+    pos: int,
+    residue: str,
+    tree: str,
+    pred: str,
+    name: str,
+    peptide: str,
+    motif_score: float,
+    string1: str,
+    string2: str,
+    string_score: float,
+    path: str,
+    networkin_score: float,
+    string_alias: dict[str, str],
+    string_desc: dict[str, str],
+    recovered: bool = False,
+    recovery_method: str = "",
 ) -> dict[str, Any]:
     return {
         "Name": target_id,
@@ -545,15 +570,15 @@ def build_prediction_row(
 
 
 def compile_predictions(
-        config: AppConfig,
-        id_pos_tree_pred: dict[str, Any],
-        tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
-        incoming2string: dict[str, dict[str, bool]],
-        string_alias: dict[str, str],
-        string_desc: dict[str, str],
-        map_group_to_domain: dict[str, dict[str, list[str]]],
-        likelihood_dir: str,
-        fasta_path: str,
+    config: AppConfig,
+    id_pos_tree_pred: dict[str, Any],
+    tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
+    incoming2string: dict[str, dict[str, bool]],
+    string_alias: dict[str, str],
+    string_desc: dict[str, str],
+    map_group_to_domain: dict[str, dict[str, list[str]]],
+    likelihood_dir: str,
+    fasta_path: str,
 ) -> tuple[list[dict[str, Any]], PredictionStats]:
     stats = PredictionStats()
     predictions: list[dict[str, Any]] = []
@@ -588,17 +613,28 @@ def compile_predictions(
                                 if not config.string_for_uncovered:
                                     continue
                                 motif_likelihood = 1.0
-                                if config.species_name == "human" and tree in ["1433", "BRCT", "WW", "PTB", "WD40",
-                                                                               "FHA"]:
-                                    string_tbl = conversion_tables[config.species_name]["SH2"]["general"]["string"]
+                                if config.species_name == "human" and tree in [
+                                    "1433",
+                                    "BRCT",
+                                    "WW",
+                                    "PTB",
+                                    "WD40",
+                                    "FHA",
+                                ]:
+                                    string_tbl = conversion_tables[config.species_name]["SH2"][
+                                        "general"
+                                    ]["string"]
                                 else:
-                                    string_tbl = conversion_tables[config.species_name][tree]["general"]["string"]
+                                    string_tbl = conversion_tables[config.species_name][tree][
+                                        "general"
+                                    ]["string"]
                                 string_likelihood = ConvertScore2L(string_score, string_tbl)
                                 networkin_score = motif_likelihood * string_likelihood
                                 stats.uncovered_branch_hits += 1
                             else:
-                                motif_tbl, string_tbl = _select_conversion_tables(conversion_tables,
-                                                                                  config.species_name, tree, name)
+                                motif_tbl, string_tbl = _select_conversion_tables(
+                                    conversion_tables, config.species_name, tree, name
+                                )
                                 motif_likelihood = ConvertScore2L(motif_score, motif_tbl)
                                 string_likelihood = ConvertScore2L(string_score, string_tbl)
                                 networkin_score = motif_likelihood * string_likelihood
@@ -635,11 +671,11 @@ def compile_predictions(
 
 
 def recover_predictions(
-        id_pos_tree_pred: dict[str, Any],
-        incoming2string: dict[str, dict[str, bool]],
-        tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
-        string_alias: dict[str, str],
-        string_desc: dict[str, str],
+    id_pos_tree_pred: dict[str, Any],
+    incoming2string: dict[str, dict[str, bool]],
+    tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
+    string_alias: dict[str, str],
+    string_desc: dict[str, str],
 ) -> list[dict[str, Any]]:
     motif_score_dict: dict[tuple[str, str], float] = {}
     for prot_id, pos_data in id_pos_tree_pred.items():
@@ -649,12 +685,14 @@ def recover_predictions(
         for string1 in mapped_strings:
             if string1 not in tree_pred_string_data:
                 continue
-            for pos, tree_data in pos_data.items():
-                for tree, pred_data in tree_data.items():
-                    for pred_name, (res, peptide, motif_score) in pred_data.items():
+            for _pos, tree_data in pos_data.items():
+                for _tree, pred_data in tree_data.items():
+                    for _pred_name, (_res, _peptide, motif_score) in pred_data.items():
                         for string2 in tree_pred_string_data[string1]:
                             key = (string2, string1)
-                            motif_score_dict[key] = max(motif_score, motif_score_dict.get(key, -1.0))
+                            motif_score_dict[key] = max(
+                                motif_score, motif_score_dict.get(key, -1.0)
+                            )
 
     all_pairs: list[tuple[str, str]] = []
     protein_ids: set[str] = set()
@@ -691,7 +729,9 @@ def recover_predictions(
             "Position": "",
             "Tree": "",
             "Motif Group": "",
-            "Kinase/Phosphatase/Phospho-binding domain": string_alias.get(r["kinase_id"], r["kinase_id"]),
+            "Kinase/Phosphatase/Phospho-binding domain": string_alias.get(
+                r["kinase_id"], r["kinase_id"]
+            ),
             "NetworKIN score": round(float(r["networkin_score"]), 4),
             "Motif probability": round(float(r["motif_score"]), 4),
             "STRING score": round(float(r["context_score"]), 4),
@@ -728,10 +768,13 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
             id_pos_res = read_networkin_sites(config.sites_path)
         else:
             raise NetworkinError(
-                "Only the basic Networkin site reader was migrated in this core refactor. Add the other adapters next.")
+                "Only the basic Networkin site reader was migrated in this core refactor. Add the other adapters next."
+            )
     else:
         id_pos_res = {}
-        logger.info("No sites file supplied; downstream scorer must enumerate all candidate S/T/Y sites")
+        logger.info(
+            "No sites file supplied; downstream scorer must enumerate all candidate S/T/Y sites"
+        )
 
     logger.info("Fetching live phosphorylation reference data")
     fetch_phosphosite(refresh=config.refresh)
@@ -742,7 +785,9 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         else os.path.join(config.datadir, "group_yeast_KIN.tsv")
     )
     map_group_to_domain = read_group_to_domain_map(group_map_path)
-    string_alias, string_desc, name_hash = read_alias_files(config.organism, config.datadir, map_group_to_domain)
+    string_alias, string_desc, name_hash = read_alias_files(
+        config.organism, config.datadir, map_group_to_domain
+    )
     incoming2string, string2incoming = map_peptides_to_string(config, id_pos_res, id_seq)
 
     logger.info("Fetching live STRING associations for reference")
@@ -754,7 +799,9 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
 
     likelihood_dir = os.path.join(
         config.datadir,
-        "likelihood_conversion_table_direct" if config.path_mode == "direct" else "likelihood_conversion_table_indirect",
+        "likelihood_conversion_table_direct"
+        if config.path_mode == "direct"
+        else "likelihood_conversion_table_indirect",
     )
 
     predictions, stats = compile_predictions(

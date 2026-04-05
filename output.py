@@ -12,9 +12,9 @@
 # Column order in STANDARD_COLUMNS matches the original NetworKIN output exactly.
 # Do NOT reorder these columns — downstream parsers depend on positional order.
 
-import pandas as pd
 from pathlib import Path
-from typing import Union
+
+import pandas as pd
 
 # Column names match the original NetworKIN CSV output exactly
 # (as written by printResult in NetworKIN.py).
@@ -35,14 +35,14 @@ STANDARD_COLUMNS = [
     "Kinase description",
     "Peptide sequence window",
     "Intermediate nodes",
-    "recovered",          # new column — False for original predictions, True for recovered
-    "recovery_method",    # new column — empty string or method name e.g. "context_proximity"
+    "recovered",  # new column — False for original predictions, True for recovered
+    "recovery_method",  # new column — empty string or method name e.g. "context_proximity"
 ]
 
 
-def write_tsv(predictions: list, path: Union[str, Path]) -> None:
-    """
-    Write predictions to a tab-separated file.
+def write_tsv(predictions: list, path: str | Path) -> None:
+    """Write predictions to a tab-separated file.
+
     Columns follow STANDARD_COLUMNS order.
     Missing optional fields are filled with None.
     """
@@ -54,25 +54,28 @@ def write_tsv(predictions: list, path: Union[str, Path]) -> None:
     df.to_csv(path, sep="\t", index=False)
 
 
-def write_cytoscape(predictions: list, path: Union[str, Path]) -> None:
-    """
-    Write Cytoscape-compatible SIF format:
+def write_cytoscape(predictions: list, path: str | Path) -> None:
+    r"""Write Cytoscape-compatible SIF format.
+
+    Writes rows as:
         source \t pp \t target
     where pp indicates a phosphorylation interaction.
     Weighted by NetworKIN score.
     """
     rows = []
     for p in predictions:
-        rows.append({
-            "source":      p.get("Kinase/Phosphatase/Phospho-binding domain", ""),
-            "interaction": "pp",
-            "target":      p.get("Name", ""),
-            "weight":      p.get("NetworKIN score", 0.0),
-        })
+        rows.append(
+            {
+                "source": p.get("Kinase/Phosphatase/Phospho-binding domain", ""),
+                "interaction": "pp",
+                "target": p.get("Name", ""),
+                "weight": p.get("NetworKIN score", 0.0),
+            }
+        )
     pd.DataFrame(rows).to_csv(path, sep="\t", index=False)
 
 
-def write_output(predictions: list, path: Union[str, Path], fmt: str = "tsv") -> None:
+def write_output(predictions: list, path: str | Path, fmt: str = "tsv") -> None:
     """Dispatcher — call write_tsv or write_cytoscape based on fmt."""
     fmt = fmt.lower().strip()
     if fmt in ("tsv", "tab"):

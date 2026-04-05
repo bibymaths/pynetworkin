@@ -12,9 +12,9 @@
 # Cache: Parquet files in .cache/, refreshed if older than 7 days.
 
 import os
+from datetime import date, timedelta
 from io import StringIO
 from pathlib import Path
-from datetime import date, timedelta
 
 import httpx
 import pandas as pd
@@ -22,8 +22,8 @@ import pandas as pd
 CACHE_DIR = Path(os.environ.get("NETWORKIN_CACHE_DIR", ".cache"))
 CACHE_DIR.mkdir(exist_ok=True)
 
-STRING_API_NETWORK  = "https://string-db.org/api/tsv/network"
-STRING_API_MAPPING  = "https://string-db.org/api/tsv/get_string_ids"
+STRING_API_NETWORK = "https://string-db.org/api/tsv/network"
+STRING_API_MAPPING = "https://string-db.org/api/tsv/get_string_ids"
 CACHE_TTL_DAYS = 7
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -69,9 +69,7 @@ def _load_flat_file(
     species   : NCBI taxonomy ID (used only to build the default file path)
     min_score : minimum combined score [0, 1000]
     """
-    flat_file = Path(
-        os.environ.get("NETWORKIN_STRING_FLAT_FILE", str(_DEFAULT_FLAT_FILE))
-    )
+    flat_file = Path(os.environ.get("NETWORKIN_STRING_FLAT_FILE", str(_DEFAULT_FLAT_FILE)))
     if not flat_file.exists():
         raise FileNotFoundError(f"STRING flat file not found: {flat_file}")
 
@@ -83,8 +81,14 @@ def _load_flat_file(
 
     # The filter script produces: tree kinase_a kinase_b string_id_a string_id_b score
     if df.shape[1] >= 6:
-        df.columns = ["tree", "protein_a", "protein_b", "string_id_a", "string_id_b", "score"] + \
-                     list(df.columns[6:])
+        df.columns = [
+            "tree",
+            "protein_a",
+            "protein_b",
+            "string_id_a",
+            "string_id_b",
+            "score",
+        ] + list(df.columns[6:])
     elif df.shape[1] >= 3:
         # Minimal variant: protein_a, protein_b, score
         df.columns = ["protein_a", "protein_b", "score"] + list(df.columns[3:])

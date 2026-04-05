@@ -1,12 +1,12 @@
-import pandas as pd
-import tempfile
 import os
 import sys
+import tempfile
+
+import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from output import write_tsv, write_cytoscape, STANDARD_COLUMNS
-
+from output import STANDARD_COLUMNS, write_cytoscape, write_tsv
 
 SAMPLE_PREDICTIONS = [
     {
@@ -67,7 +67,7 @@ def test_tsv_column_order_matches_standard():
         path = f.name
     write_tsv(SAMPLE_PREDICTIONS, path)
     df = pd.read_csv(path, sep="\t")
-    assert list(df.columns[:len(STANDARD_COLUMNS)]) == STANDARD_COLUMNS
+    assert list(df.columns[: len(STANDARD_COLUMNS)]) == STANDARD_COLUMNS
     os.unlink(path)
 
 
@@ -86,8 +86,9 @@ def test_networkin_score_in_range():
     write_tsv(SAMPLE_PREDICTIONS, path)
     df = pd.read_csv(path, sep="\t")
     scored = df[~df["recovered"].astype(str).isin(["True"])]
-    assert (scored["NetworKIN score"].between(0.0, 1.0)).all(), \
+    assert (scored["NetworKIN score"].between(0.0, 1.0)).all(), (
         "Non-recovered NetworKIN score must be in [0, 1]"
+    )
     os.unlink(path)
 
 

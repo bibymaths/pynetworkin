@@ -2933,6 +2933,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "tqdm" },
     { name = "typer" },
+    { name = "uniprot-id-mapper" },
 ]
 
 [package.optional-dependencies]
@@ -2982,7 +2983,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=15.0" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.2" },
-    { name = "pynetphorest", specifier = ">=0.1.1" },
+    { name = "pynetphorest", specifier = "==0.1.3" },
     { name = "requests", specifier = ">=2.32" },
     { name = "rich", specifier = ">=13.7" },
     { name = "scikit-learn", marker = "extra == 'kg'", specifier = ">=1.5" },
@@ -2990,6 +2991,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "tqdm", specifier = ">=4.66" },
     { name = "typer", specifier = ">=0.12" },
+    { name = "uniprot-id-mapper", specifier = ">=1.1" },
 ]
 provides-extras = ["kg"]
 
@@ -4158,6 +4160,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/19/f5/cd531b2d15a671a40c0f66cf06bc3570a12cd56eef98960068ebbad1bf5a/tzdata-2026.1.tar.gz", hash = "sha256:67658a1903c75917309e753fdc349ac0efd8c27db7a0cb406a25be4840f87f98", size = 197639, upload-time = "2026-04-03T11:25:22.002Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b0/70/d460bd685a170790ec89317e9bd33047988e4bce507b831f5db771e142de/tzdata-2026.1-py2.py3-none-any.whl", hash = "sha256:4b1d2be7ac37ceafd7327b961aa3a54e467efbdb563a23655fbfe0d39cfc42a9", size = 348952, upload-time = "2026-04-03T11:25:20.313Z" },
+]
+
+[[package]]
+name = "uniprot-id-mapper"
+version = "1.1.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "pandas", version = "3.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "requests" },
+    { name = "tqdm" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/11/c2/65600302d40dadd0aca374823ede7bb073dbbd3cb78aa1c283eebe9cbe18/uniprot_id_mapper-1.1.5-py3-none-any.whl", hash = "sha256:dc8627ea24ec1dfe1a07783dc05195db0751270ab9342ef1a1091dcfe4b04f7f", size = 45996, upload-time = "2026-03-02T16:14:29.652Z" },
 ]
 
 [[package]]

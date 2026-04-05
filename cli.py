@@ -64,43 +64,141 @@ def predict(
         ("Writing output", None),
     ]
 
-    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
+    from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
     results: dict = {}
 
     with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
+            SpinnerColumn(style="cyan"),
+            TextColumn("[bold cyan]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False,
     ) as progress:
-        for step_name, _ in steps:
-            task = progress.add_task(step_name, total=None)
-            progress.advance(task)
+        task = progress.add_task("Running pipeline", total=None)
 
         try:
-            import pipeline
-            results = pipeline.run_pipeline(
-                input_file=str(input_file),
-                output_path=str(output),
-                output_format=format,
-                refresh=refresh,
-                use_kg_embedding=use_kg_embedding,
-                string_score=string_score,
-                species=species,
+            import csv
+            import shutil
+            from NetworKIN import AppConfig, run_pipeline as core_run_pipeline
+
+            del use_kg_embedding
+            del string_score
+
+            project_root = Path(__file__).resolve().parent
+            output_format = format.lower().strip()
+            final_output = output.expanduser().resolve()
+
+            if output_format not in {"tsv", "sif"}:
+                raise ValueError(f"Unsupported output format: {output_format}")
+
+            progress.update(task, description="Preparing configuration")
+
+            config = AppConfig(
+                organism=str(species),
+                fasta_path=str(input_file.expanduser().resolve()),
+                sites_path=None,
+                datadir=str(project_root / "data"),
+                blast_dir=str(project_root / "bin") + "/",
                 verbose=verbose,
+                refresh=refresh,
+                result_dir=str(project_root / "results"),
+                temp_dir=str(project_root / "tmp"),
             )
-        except ImportError:
-            console.print("[yellow]Warning:[/] pipeline module not found — running in demo mode.")
+
+            progress.update(task, description="Executing NetworKIN pipeline")
+            core_results = core_run_pipeline(config)
+
+            progress.update(task, description="Collecting output")
+            raw_tsv = Path(core_results["output_path"]).expanduser().resolve()
+
+            if not raw_tsv.exists():
+                raise FileNotFoundError(
+                    f"NetworKIN reported success but output file was not found: {raw_tsv}"
+                )
+
+            def _count_prediction_rows(tsv_path: Path) -> int:
+                count = 0
+                with tsv_path.open("r", encoding="utf-8", errors="replace") as handle:
+                    for line in handle:
+                        stripped = line.strip()
+                        if not stripped:
+                            continue
+                        if stripped.startswith("#"):
+                            continue
+                        if stripped.startswith("c_") and "=" in stripped:
+                            continue
+                        count += 1
+                return count
+
+            def _count_recovered_rows(tsv_path: Path) -> int:
+                recovered_count = 0
+                with tsv_path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+                    reader = csv.DictReader(
+                        (row for row in handle if row.strip() and not row.startswith("c_")),
+                        delimiter="\t",
+                    )
+
+                    if not reader.fieldnames or "recovered" not in reader.fieldnames:
+                        return 0
+
+                    for row in reader:
+                        value = str(row.get("recovered", "")).strip().lower()
+                        if value in {"true", "1", "yes"}:
+                            recovered_count += 1
+                return recovered_count
+
+            def _write_sif_from_tsv(src_tsv: Path, dst_sif: Path) -> int:
+                dst_sif.parent.mkdir(parents=True, exist_ok=True)
+                written = 0
+
+                with src_tsv.open("r", encoding="utf-8", errors="replace", newline="") as infile, \
+                        dst_sif.open("w", encoding="utf-8", newline="") as outfile:
+                    reader = csv.DictReader(
+                        (row for row in infile if row.strip() and not row.startswith("c_")),
+                        delimiter="\t",
+                    )
+
+                    if not reader.fieldnames:
+                        return 0
+
+                    for row in reader:
+                        substrate = str(row.get("Name", "")).strip()
+                        kinase = str(
+                            row.get("Kinase/Phosphatase/Phospho-binding domain", "")
+                        ).strip()
+
+                        if not substrate or not kinase:
+                            continue
+
+                        outfile.write(f"{substrate}\tpredicted_by\t{kinase}\n")
+                        written += 1
+
+                return written
+
+            progress.update(task, description="Summarizing predictions")
+            total_predictions = _count_prediction_rows(raw_tsv)
+            recovered_predictions = _count_recovered_rows(raw_tsv)
+
+            progress.update(task, description="Writing final output")
+            if output_format == "tsv":
+                final_output.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(raw_tsv, final_output)
+                motif_scored = total_predictions
+            else:
+                motif_scored = _write_sif_from_tsv(raw_tsv, final_output)
+
             results = {
-                "total": 0,
-                "motif_scored": 0,
-                "recovered": 0,
-                "output_file": str(output),
+                "total": total_predictions,
+                "motif_scored": motif_scored,
+                "recovered": recovered_predictions,
+                "output_file": str(final_output),
             }
+
+            progress.update(task, description="[bold green]Pipeline complete[/]", completed=1)
+
         except Exception as exc:
+            progress.update(task, description="[bold red]Pipeline failed[/]")
             console.print(f"[bold red]Pipeline error:[/] {exc}")
             raise typer.Exit(code=1)
 

@@ -502,6 +502,8 @@ class MaxQuantProcessor:
                         logger.debug("Fetched Ensembl sequence: %s", eid)
                     else:
                         logger.warning("No Ensembl sequence found for %s", eid)
+                    # Ensembl REST API does not support batching, so we rate-limit
+                    # between individual requests (unlike the batched UniProt path).
                     if idx < len(ensembl_ids) - 1:
                         await asyncio.sleep(self.rate_limit_delay)
                 logger.info(

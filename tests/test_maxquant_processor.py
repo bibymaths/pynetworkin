@@ -376,7 +376,7 @@ class TestFetchSequences:
         async def _mock_ensembl_fetch(client, ensembl_id):
             return fasta
 
-        async def _mock_map(client, refseq_ids, ensembl_ids):
+        async def _mock_map(client, refseq_ids, _ensembl_ids):
             return {}
 
         with (

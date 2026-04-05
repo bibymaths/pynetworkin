@@ -76,7 +76,7 @@ def ReadGroup2DomainMap(path_group2domain_map):
     c=0
     cl=0
     not_mapped=[]
-    with open("group_human_protein_name_map_curated.tsv", "w") as output_file:
+    with open("../../data/group_human_protein_name_map_curated.tsv", "w") as output_file:
         for line in f.readlines():
             cl+=1
             tokens = line.split()
@@ -228,4 +228,4 @@ def ReadGroup2DomainMap(path_group2domain_map):
     logger.warning("{}", not_mapped)
     return map_group2domain
 name_hash = readAliasFiles('9606','.')
-map_group2domain = ReadGroup2DomainMap("string_data/group_human_protein_name_map.tsv")
+map_group2domain = ReadGroup2DomainMap("../../data/legacy/group_human_protein_name_map.tsv")

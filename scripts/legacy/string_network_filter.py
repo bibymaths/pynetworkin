@@ -9,7 +9,7 @@ from logger import console, logger
 ### needs to be executed everytime new data from string is added
 
 # Open the new protein links file
-with gzip.open('9606.protein.links.v12.0.txt.gz', 'rb') as f:
+with gzip.open('../../data/legacy/9606.protein.links.v12.0.txt.gz', 'rb') as f:
     content = f.read().decode('utf-8')
 lines = content.split('\n')
 interaction_list=[]
@@ -23,7 +23,7 @@ og_len=len(interaction_list)
 
 # Get Protein names from .info file
 name_hash={}
-with open('9606.protein.info.v12.0.txt', 'r') as file:
+with open('../../data/legacy/9606.protein.info.v12.0.txt', 'r') as file:
     content = file.read()#.decode('utf-8')
     name_db = content.split('\n')
     name_db.pop(-1)
@@ -35,7 +35,7 @@ with open('9606.protein.info.v12.0.txt', 'r') as file:
 
 # Get the corresponding Group for every Kinase from the group.tsv file
 data_dict = {}
-with open('group_human_protein_name_map.tsv', 'r') as file:
+with open('../../data/legacy/group_human_protein_name_map.tsv', 'r') as file:
     for line in file:
         try:
             columns = line.strip().split('\t')

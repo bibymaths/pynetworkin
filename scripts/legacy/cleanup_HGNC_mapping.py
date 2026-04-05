@@ -63,7 +63,7 @@ idmap_final_ambiguous = CIdMap()
 
 
 
-f = open("string_id_unique.txt")
+f = open("../../archive/HGNC_Symbol_mapping/string_id_unique.txt")
 
 
 for line in f.readlines():

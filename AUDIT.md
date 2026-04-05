@@ -223,3 +223,25 @@
 | No ctypes usage anywhere | — |
 | No SQL files | — |
 | No config/ini/conf files | — |
+
+---
+
+## Live Data Migration
+
+| Stale data source | Original location | External DB | Pipeline stage | Status |
+|---|---|---|---|---|
+| `%s/%s.bestpath_0340_0950.v9.tsv.gz` (STRING network) | `NetworKIN.py` `loadSTRINGdata()` | STRING v9/v12 | Context scoring | [x] live data migration complete |
+| `phospho.tsv` / user-provided phospho flat files | `NetworKIN.py` `Main()` lines 1076–1090 | PhosphoSitePlus, Phospho.ELM | Input loading | [x] live data migration complete |
+| `%s/%s.text_best.v9.0.tsv.gz` (STRING aliases) | `NetworKIN.py` `readAliasFiles()` | STRING v9 | Input loading | static file (alias lookup; not replaced) |
+| `%s/%s.protein.aliases.v12.0.txt.gz` (STRING aliases v12) | `NetworKIN.py` `readAliasFiles()` | STRING v12 | Input loading | static file (alias lookup; not replaced) |
+| `9606.protein.sequences.v12.0.fa` (BLAST DB) | `NetworKIN.py` `mapPeptides2STRING()` | STRING v12 | BLAST mapping | static file (BLAST DB; not replaced) |
+
+### New modules
+
+- `inputs/phosphosites.py` — live fetch from PhosphoSitePlus and Phospho.ELM; 7-day Parquet cache in `.cache/`
+- `inputs/string_network.py` — live fetch via STRING REST API; 7-day Parquet cache in `.cache/`
+- `requirements.txt` — added `httpx`, `pandas`, `pyarrow`
+
+### New CLI flag
+
+`--refresh` added to `NetworKIN.py`: forces re-download of live data even when a valid 7-day cache exists.

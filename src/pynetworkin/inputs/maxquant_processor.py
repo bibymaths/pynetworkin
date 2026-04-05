@@ -7,32 +7,22 @@
 #   1. Parse the MaxQuant site table (tab-separated).
 #   2. Clean & classify every protein ID in the "Proteins" column.
 #   3. Auto-detect ID type (UniProt, RefSeq, Ensembl, other).
-#   4. Download FASTA sequences from UniProt REST API.
+#   4. Download FASTA sequences via UniProtMapper.
 #   5. Write a clean FASTA file, a cleaned site table, an ID-mapping CSV,
 #      and a JSON processing report to the requested output directory.
-#
-# UniProt REST endpoints:
-#   - Fetch by accession: https://rest.uniprot.org/uniprotkb/{ID}.fasta
-#   - ID-mapping service:  https://rest.uniprot.org/idmapping/
-#
-# Rate limiting: honour rate_limit_delay (seconds) between individual
-# requests; batch up to UNIPROT_BATCH_SIZE accessions into one search
-# request when fetching UniProt IDs directly.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
-import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
-import httpx
 import pandas as pd
+from UniProtMapper import ProtMapper
 
 logger = logging.getLogger(__name__)
 
@@ -40,17 +30,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-UNIPROT_FASTA_URL = "https://rest.uniprot.org/uniprotkb/{accession}.fasta"
-UNIPROT_SEARCH_URL = "https://rest.uniprot.org/uniprotkb/search"
-UNIPROT_IDMAPPING_RUN_URL = "https://rest.uniprot.org/idmapping/run"
-UNIPROT_IDMAPPING_STATUS_URL = "https://rest.uniprot.org/idmapping/status/{job_id}"
-UNIPROT_IDMAPPING_RESULTS_URL = "https://rest.uniprot.org/idmapping/uniprotkb/results/{job_id}"
-
-UNIPROT_BATCH_SIZE = 50   # max accessions per search request
-MAX_RETRIES = 3
-RETRY_DELAY = 2.0          # base delay in seconds (doubles each retry)
-IDMAPPING_POLL_INTERVAL = 2.0
-IDMAPPING_POLL_MAX = 30    # seconds before giving up on a job
+UNIPROT_BATCH_SIZE = 500  # ProtMapper handles batching internally (up to 500)
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +101,8 @@ class MaxQuantProcessor:
     Parameters
     ----------
     rate_limit_delay:
-        Minimum pause (seconds) between UniProt HTTP requests.
+        Deprecated. ProtMapper handles rate limiting internally; this
+        parameter is accepted for backward compatibility but has no effect.
     """
 
     # Pre-compiled ID patterns
@@ -140,7 +121,14 @@ class MaxQuantProcessor:
     _RE_REFSEQ_VERSION = re.compile(r"\.\d+$")
 
     def __init__(self, rate_limit_delay: float = 0.1) -> None:
-        self.rate_limit_delay = rate_limit_delay
+        if rate_limit_delay != 0.1:
+            warnings.warn(
+                "rate_limit_delay is deprecated and has no effect; "
+                "ProtMapper handles rate limiting internally.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        self._mapper = ProtMapper()
 
     # ------------------------------------------------------------------
     # ID cleaning helpers
@@ -249,92 +237,11 @@ class MaxQuantProcessor:
         return ";".join(cleaned)
 
     # ------------------------------------------------------------------
-    # UniProt download
+    # UniProt download via ProtMapper
     # ------------------------------------------------------------------
 
-    async def _fetch_one_fasta(
+    def _map_non_uniprot_ids(
         self,
-        client: httpx.AsyncClient,
-        accession: str,
-    ) -> str | None:
-        """Fetch a single UniProt FASTA; return raw FASTA text or None."""
-        url = UNIPROT_FASTA_URL.format(accession=quote(accession, safe=""))
-        for attempt in range(MAX_RETRIES):
-            try:
-                resp = await client.get(url, timeout=30)
-                if resp.status_code == 200:
-                    text = resp.text.strip()
-                    return text if text.startswith(">") else None
-                if resp.status_code == 429:
-                    # Rate limited – back off
-                    await asyncio.sleep(RETRY_DELAY * (attempt + 1))
-                    continue
-                if resp.status_code == 404:
-                    return None
-                resp.raise_for_status()
-            except httpx.TimeoutException:
-                logger.warning("Timeout fetching %s (attempt %d)", accession, attempt + 1)
-                await asyncio.sleep(RETRY_DELAY * (attempt + 1))
-            except httpx.HTTPStatusError as exc:
-                logger.warning("HTTP error fetching %s: %s", accession, exc)
-                await asyncio.sleep(RETRY_DELAY * (attempt + 1))
-        return None
-
-    async def _submit_idmapping_job(
-        self,
-        client: httpx.AsyncClient,
-        ids: list[str],
-        from_db: str,
-        to_db: str = "UniProtKB",
-    ) -> str | None:
-        """Submit an ID-mapping job; return job ID or None on failure."""
-        try:
-            resp = await client.post(
-                UNIPROT_IDMAPPING_RUN_URL,
-                data={"from": from_db, "to": to_db, "ids": ",".join(ids)},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("jobId")
-        except Exception as exc:
-            logger.warning("ID-mapping submission failed: %s", exc)
-            return None
-
-    async def _poll_idmapping_results(
-        self,
-        client: httpx.AsyncClient,
-        job_id: str,
-    ) -> list[dict[str, str]]:
-        """Poll until an ID-mapping job finishes; return result list."""
-        deadline = time.monotonic() + IDMAPPING_POLL_MAX
-        while time.monotonic() < deadline:
-            await asyncio.sleep(IDMAPPING_POLL_INTERVAL)
-            try:
-                status_resp = await client.get(
-                    UNIPROT_IDMAPPING_STATUS_URL.format(job_id=job_id),
-                    timeout=15,
-                )
-                status_resp.raise_for_status()
-                payload = status_resp.json()
-                if "jobStatus" in payload and payload["jobStatus"] != "FINISHED":
-                    continue
-                # Either finished inline or a redirect – fetch results
-                results_resp = await client.get(
-                    UNIPROT_IDMAPPING_RESULTS_URL.format(job_id=job_id),
-                    timeout=60,
-                )
-                results_resp.raise_for_status()
-                results_data = results_resp.json()
-                return results_data.get("results", [])
-            except Exception as exc:
-                logger.warning("Error polling ID-mapping job %s: %s", job_id, exc)
-        logger.warning("ID-mapping job %s timed out", job_id)
-        return []
-
-    async def _map_non_uniprot_ids(
-        self,
-        client: httpx.AsyncClient,
         refseq_ids: list[str],
         ensembl_ids: list[str],
     ) -> dict[str, str]:
@@ -350,26 +257,31 @@ class MaxQuantProcessor:
             (refseq_ids, "RefSeq_Protein"),
             (ensembl_ids, "Ensembl_Protein"),
         ]:
-            for i in range(0, len(batch_ids), UNIPROT_BATCH_SIZE):
-                batch = batch_ids[i : i + UNIPROT_BATCH_SIZE]
-                job_id = await self._submit_idmapping_job(client, batch, from_db=db_name)
-                if not job_id:
-                    continue
-                results = await self._poll_idmapping_results(client, job_id)
-                for r in results:
-                    orig = r.get("from", "")
-                    entry = r.get("to", {})
-                    if isinstance(entry, dict):
-                        acc = entry.get("primaryAccession", "")
-                    else:
-                        acc = str(entry)
-                    if orig and acc:
-                        mapped[orig] = acc
-                await asyncio.sleep(self.rate_limit_delay)
+            if not batch_ids:
+                continue
+            try:
+                result_df, failed = self._mapper.get(
+                    ids=batch_ids,
+                    from_db=db_name,
+                    to_db="UniProtKB",
+                    fields=["accession"],
+                )
+                if failed:
+                    logger.warning(
+                        "Failed to map %d %s IDs: %s", len(failed), db_name, failed
+                    )
+                if not result_df.empty and "From" in result_df.columns and "Entry" in result_df.columns:
+                    for _, row in result_df.iterrows():
+                        orig = row["From"]
+                        acc = row["Entry"]
+                        if orig and acc:
+                            mapped[orig] = acc
+            except Exception as exc:
+                logger.warning("ID mapping failed for %s: %s", db_name, exc)
 
         return mapped
 
-    async def fetch_sequences_from_uniprot(
+    def fetch_sequences_from_uniprot(
         self,
         protein_ids: list[str],
         id_types: dict[str, str] | None = None,
@@ -394,43 +306,56 @@ class MaxQuantProcessor:
 
         sequences: dict[str, str] = {}
 
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            # ── 1. Map non-UniProt IDs ────────────────────────────────────────
-            refseq = [p for p in protein_ids if id_types.get(p) == "refseq"]
-            ensembl = [p for p in protein_ids if id_types.get(p) == "ensembl"]
-            id_map: dict[str, str] = {}  # original → uniprot accession
-            if refseq or ensembl:
-                id_map = await self._map_non_uniprot_ids(client, refseq, ensembl)
+        # ── 1. Map non-UniProt IDs ────────────────────────────────────────
+        refseq = [p for p in protein_ids if id_types.get(p) == "refseq"]
+        ensembl = [p for p in protein_ids if id_types.get(p) == "ensembl"]
+        id_map: dict[str, str] = {}  # original → uniprot accession
+        if refseq or ensembl:
+            id_map = self._map_non_uniprot_ids(refseq, ensembl)
 
-            # Build the set of UniProt accessions to fetch
-            fetch_targets: dict[str, str] = {}  # uniprot_acc → original_id
-            for pid in protein_ids:
-                ptype = id_types.get(pid, "uniprot")
-                if ptype in {"refseq", "ensembl"}:
-                    uniprot_acc = id_map.get(pid)
-                    if uniprot_acc:
-                        fetch_targets[uniprot_acc] = pid
-                    else:
-                        logger.warning("No UniProt mapping found for %s", pid)
-                elif ptype == "other":
-                    logger.warning("Skipping unsupported ID type for: %s", pid)
+        # Build the set of UniProt accessions to fetch
+        fetch_targets: dict[str, str] = {}  # uniprot_acc → original_id
+        for pid in protein_ids:
+            ptype = id_types.get(pid, "uniprot")
+            if ptype in {"refseq", "ensembl"}:
+                uniprot_acc = id_map.get(pid)
+                if uniprot_acc:
+                    fetch_targets[uniprot_acc] = pid
                 else:
-                    fetch_targets[pid] = pid
+                    logger.warning("No UniProt mapping found for %s", pid)
+            elif ptype == "other":
+                logger.warning("Skipping unsupported ID type for: %s", pid)
+            else:
+                fetch_targets[pid] = pid
 
-            # ── 2. Fetch FASTA in batches ─────────────────────────────────────
-            accessions = list(fetch_targets.keys())
-            for i in range(0, len(accessions), UNIPROT_BATCH_SIZE):
-                batch = accessions[i : i + UNIPROT_BATCH_SIZE]
-                tasks = [self._fetch_one_fasta(client, acc) for acc in batch]
-                raw_results = await asyncio.gather(*tasks)
-                for acc, fasta_text in zip(batch, raw_results, strict=True):
-                    original = fetch_targets[acc]
-                    if fasta_text:
+        # ── 2. Fetch sequences ────────────────────────────────────────────
+        accessions = list(fetch_targets.keys())
+        if not accessions:
+            return sequences
+
+        try:
+            result_df, failed = self._mapper.get(
+                ids=accessions,
+                to_db="UniProtKB",
+                fields=["accession", "id", "protein_name", "sequence"],
+            )
+            if failed:
+                logger.warning(
+                    "Failed to fetch sequences for %d IDs: %s", len(failed), failed
+                )
+            if not result_df.empty:
+                for _, row in result_df.iterrows():
+                    acc = row.get("Entry", "")
+                    entry_name = row.get("Entry Name", "")
+                    protein_name = row.get("Protein names", "")
+                    seq = row.get("Sequence", "")
+                    if acc and seq:
+                        header = f">sp|{acc}|{entry_name} {protein_name}".strip()
+                        fasta_text = f"{header}\n{seq}\n"
+                        original = fetch_targets.get(acc, acc)
                         sequences[original] = fasta_text
-                    else:
-                        logger.warning("No sequence found for %s", acc)
-                if i + UNIPROT_BATCH_SIZE < len(accessions):
-                    await asyncio.sleep(self.rate_limit_delay)
+        except Exception as exc:
+            logger.warning("Failed to fetch sequences: %s", exc)
 
         return sequences
 
@@ -529,11 +454,9 @@ class MaxQuantProcessor:
         id_types = {cid: info.id_type for cid, info in kept.items()}
         sequences: dict[str, str] = {}
         try:
-            sequences = asyncio.run(
-                self.fetch_sequences_from_uniprot(
-                    list(kept.keys()),
-                    id_types=id_types,
-                )
+            sequences = self.fetch_sequences_from_uniprot(
+                list(kept.keys()),
+                id_types=id_types,
             )
         except Exception as exc:
             msg = f"Error during sequence download: {exc}"

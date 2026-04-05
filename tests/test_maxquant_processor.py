@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -205,8 +205,7 @@ class TestProcessSiteTable:
         p = tmp_path / "bad.txt"
         p.write_text("Other\tColumns\nA\tB\n", encoding="utf-8")
 
-        with patch.object(processor, "fetch_sequences_from_uniprot", new_callable=AsyncMock) as m:
-            m.return_value = {}
+        with patch.object(processor, "fetch_sequences_from_uniprot", return_value={}):
             result = processor.process_site_table(input_file=p, output_dir=tmp_path / "out")
 
         report = result["report"]
@@ -219,7 +218,7 @@ class TestProcessSiteTable:
         out_dir = tmp_path / "out"
 
         # Patch network calls so test is offline
-        async def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
+        def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
             return {pid: f">sp|{pid}|FAKE_HUMAN Fake\nMSEQ\n" for pid in ids}
 
         with patch.object(processor, "fetch_sequences_from_uniprot", side_effect=_fake_fetch):
@@ -236,7 +235,7 @@ class TestProcessSiteTable:
         site_file = _make_site_table_file(tmp_path)
         out_dir = tmp_path / "out"
 
-        async def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
+        def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
             return {}
 
         with patch.object(processor, "fetch_sequences_from_uniprot", side_effect=_fake_fetch):
@@ -253,7 +252,7 @@ class TestProcessSiteTable:
         site_file = _make_site_table_file(tmp_path)
         out_dir = tmp_path / "out"
 
-        async def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
+        def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
             return {}
 
         with patch.object(processor, "fetch_sequences_from_uniprot", side_effect=_fake_fetch):
@@ -269,7 +268,7 @@ class TestProcessSiteTable:
         site_file = _make_site_table_file(tmp_path)
         out_dir = tmp_path / "out"
 
-        async def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
+        def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
             return {}
 
         with patch.object(processor, "fetch_sequences_from_uniprot", side_effect=_fake_fetch):
@@ -286,7 +285,7 @@ class TestProcessSiteTable:
         site_file = _make_site_table_file(tmp_path)
         out_dir = tmp_path / "out"
 
-        async def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
+        def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
             return {}
 
         with patch.object(processor, "fetch_sequences_from_uniprot", side_effect=_fake_fetch):
@@ -303,7 +302,7 @@ class TestProcessSiteTable:
         site_file = _make_site_table_file(tmp_path)
         out_dir = tmp_path / "out"
 
-        async def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
+        def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
             return {"P12345": ">sp|P12345|PROT_HUMAN Fake\nMSEQ\n"}
 
         with patch.object(processor, "fetch_sequences_from_uniprot", side_effect=_fake_fetch):
@@ -320,7 +319,7 @@ class TestProcessSiteTable:
         if not sample.exists():
             pytest.skip("sample_MQ.res not present")
 
-        async def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
+        def _fake_fetch(ids: list[str], id_types: dict | None = None) -> dict[str, str]:
             return {}
 
         with patch.object(processor, "fetch_sequences_from_uniprot", side_effect=_fake_fetch):
@@ -332,45 +331,33 @@ class TestProcessSiteTable:
 
 
 # ---------------------------------------------------------------------------
-# fetch_sequences_from_uniprot – unit tests with mocked HTTP
+# fetch_sequences_from_uniprot – unit tests with mocked ProtMapper
 # ---------------------------------------------------------------------------
 
 
 class TestFetchSequences:
-    @pytest.mark.asyncio()
-    async def test_returns_fasta_for_valid_id(self, processor: MaxQuantProcessor) -> None:
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.text = SAMPLE_FASTA
+    def test_returns_fasta_for_valid_id(self, processor: MaxQuantProcessor) -> None:
+        result_df = pd.DataFrame([{
+            "From": "P12345",
+            "Entry": "P12345",
+            "Entry Name": "PROT_HUMAN",
+            "Protein names": "Test protein",
+            "Sequence": "MSEQENCELINES",
+        }])
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.get = AsyncMock(return_value=mock_resp)
-            mock_client.post = AsyncMock(return_value=MagicMock(status_code=200, json=MagicMock(return_value={})))
-            mock_client_cls.return_value = mock_client
-
-            result = await processor.fetch_sequences_from_uniprot(
+        with patch.object(processor._mapper, "get", return_value=(result_df, [])):
+            result = processor.fetch_sequences_from_uniprot(
                 ["P12345"], id_types={"P12345": "uniprot"}
             )
 
         assert "P12345" in result
+        assert result["P12345"].startswith(">sp|P12345|")
 
-    @pytest.mark.asyncio()
-    async def test_returns_empty_for_404(self, processor: MaxQuantProcessor) -> None:
-        mock_resp = MagicMock()
-        mock_resp.status_code = 404
+    def test_returns_empty_for_failed_id(self, processor: MaxQuantProcessor) -> None:
+        empty_df = pd.DataFrame(columns=["From", "Entry", "Entry Name", "Protein names", "Sequence"])
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.get = AsyncMock(return_value=mock_resp)
-            mock_client.post = AsyncMock(return_value=MagicMock(status_code=200, json=MagicMock(return_value={})))
-            mock_client_cls.return_value = mock_client
-
-            result = await processor.fetch_sequences_from_uniprot(
+        with patch.object(processor._mapper, "get", return_value=(empty_df, ["INVALID"])):
+            result = processor.fetch_sequences_from_uniprot(
                 ["INVALID"], id_types={"INVALID": "uniprot"}
             )
 

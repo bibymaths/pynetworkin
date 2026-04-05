@@ -1,0 +1,17 @@
+# Global ownership
+* @bibymaths
+
+# Core pipeline
+src/pynetworkin/networkin.py @bibymaths
+src/pynetworkin/motif_scoring.py @bibymaths
+src/pynetworkin/graph_scoring.py @bibymaths
+src/pynetworkin/recovery.py @bibymaths
+
+# CLI and interface
+src/pynetworkin/cli.py @bibymaths
+
+# Tests
+tests/ @bibymaths
+
+# Docs
+docs/ @bibymaths

@@ -8,23 +8,25 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
+  language: en
   font:
-    text: Inter
-    code: JetBrains Mono
-  icon:
-    repo: fontawesome/brands/github
+    text: Ubuntu           # The font for standard paragraph text
+    code: Fira Code        # The font for code blocks
   palette:
+    # Palette toggle for light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: blue
-      accent: cyan
+      primary: indigo # Change this to your brand color!
+      accent: deep purple
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
+
+    # Palette toggle for dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: blue
-      accent: cyan
+      primary: black
+      accent: deep purple
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -78,3 +80,6 @@ nav:
       - Graph Scoring: api/graph_scoring.md
       - Recovery: api/recovery.md
       - Output: api/output.md
+
+copyright: >
+  Copyright &copy; 2026 <a href="https://bibymaths.github.io">Abhinav Mishra</a>.

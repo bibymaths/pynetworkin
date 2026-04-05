@@ -2,7 +2,7 @@
 
 **PyNetworKIN** is a Bayesian kinase–substrate prediction pipeline for
 phosphoproteomics. It integrates sequence-motif scoring (via
-[NetPhorest](http://netphorest.info)) with protein-interaction context (via the
+[pynetphorest](https://github.com/bibymaths/pynetphorest)) with protein-interaction context (via the
 [STRING](https://string-db.org) network) to predict which kinases, phosphatases, or
 phospho-binding domains are responsible for observed phosphorylation events.
 
@@ -41,12 +41,6 @@ interaction data.
 
 ```bash
 pip install -e .
-```
-
-Or with the optional knowledge-graph extras:
-
-```bash
-pip install -e ".[kg]"
 ```
 
 ---
@@ -182,7 +176,7 @@ tests/
   test_networkin.py       # Tests for load_conversion_tables, detect_site_file_type, run_pipeline
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed description of the execution flow.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for a detailed description of the execution flow.
 
 ---
 
@@ -190,7 +184,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for a detailed description of the executi
 
 - **pynetphorest**: kinase-group motif models (Python package).
 - **STRING v12**: human protein interactions and sequences.
-  Downloaded from [string-db.org](https://string-db.org).
+  Downloaded from [string-db.org](https://string-db.org/cgi/download?sessionId=bEOI8m2P4OXM&species_text=Homo+sapiens).
 - **OmniPath**: phosphorylation site reference data (fetched live, cached locally).
 
 ---

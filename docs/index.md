@@ -37,4 +37,4 @@ uvx pynetworkin predict input.fasta -o results.tsv --refresh
 
 ## Architecture
 
-See [ARCHITECTURE.md](https://github.com/bibymaths/pynetworkin/blob/main/ARCHITECTURE.md) for full technical details.
+See [ARCHITECTURE.md](https://github.com/bibymaths/pynetworkin/blob/main/docs/ARCHITECTURE.md) for full technical details.

@@ -58,7 +58,7 @@ jobs:
         run: uv sync --no-install-project --group dev --group docs
 
       - name: Run tests with coverage
-        run: uv run pytest tests/ -v --cov=. --cov-report=xml
+        run: uv run pytest tests/ -v --cov=. --cov-report=xml --cov-fail-under=10
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

@@ -1,0 +1,106 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+type: software
+title: "pynetworkin: Kinase–substrate network prediction"
+abstract: >
+  pynetworkin is a modernised implementation of the NetworKIN algorithm for
+  kinase–substrate network prediction. It integrates pynetphorest (NetPhoREST
+  atlas) for motif scoring, SQLAlchemy/PostgreSQL for data persistence, Numba
+  for numerical acceleration, OmniPath and STRING v12.0 for live network data,
+  and a novel false-negative recovery step based on network context proximity.
+authors:
+  - family-names: Mishra
+    given-names: Abhinav
+    orcid: "https://orcid.org/PLACEHOLDER"
+    affiliation: "PLACEHOLDER Institution"
+version: "0.1.0"
+date-released: "2026-04-05"
+license: MIT
+repository-code: "https://github.com/PLACEHOLDER/pynetworkin"
+url: "https://PLACEHOLDER.github.io/pynetworkin"
+keywords:
+  - bioinformatics
+  - phosphorylation
+  - kinase
+  - network
+  - proteomics
+  - NetworKIN
+  - NetPhoREST
+  - STRING
+  - OmniPath
+  - signalling
+references:
+  - type: article
+    title: "NetworKIN: a resource for exploring cellular kinase-substrate networks"
+    authors:
+      - family-names: Linding
+        given-names: R.
+      - family-names: Jensen
+        given-names: L. J.
+      - family-names: Ostheimer
+        given-names: G. J.
+      - family-names: van Vugt
+        given-names: M. A.
+      - family-names: Jorgensen
+        given-names: C.
+      - family-names: Miron
+        given-names: I. M.
+      - family-names: Diella
+        given-names: F.
+      - family-names: Colwill
+        given-names: K.
+      - family-names: Taylor
+        given-names: L.
+      - family-names: Elder
+        given-names: K.
+      - family-names: Metalnikov
+        given-names: P.
+      - family-names: Nguyen
+        given-names: V.
+      - family-names: Pasculescu
+        given-names: A.
+      - family-names: Jin
+        given-names: J.
+      - family-names: Park
+        given-names: J. G.
+      - family-names: Samson
+        given-names: L. D.
+      - family-names: Woodgett
+        given-names: J. R.
+      - family-names: Russell
+        given-names: R. B.
+      - family-names: Bork
+        given-names: P.
+      - family-names: Pawson
+        given-names: T.
+      - family-names: Pawson
+        given-names: T.
+    year: 2007
+    journal: "Nucleic Acids Research"
+    doi: "10.1093/nar/gkm902"
+  - type: article
+    title: "Linking kinase–substrate networks and kinase inhibition to explain drug resistance in cancer"
+    authors:
+      - family-names: Breuer
+        given-names: K.
+      - family-names: Foroushani
+        given-names: A. K.
+      - family-names: Laird
+        given-names: M. R.
+      - family-names: Chen
+        given-names: C.
+      - family-names: Sribnaia
+        given-names: A.
+      - family-names: Lo
+        given-names: R.
+      - family-names: Winsor
+        given-names: G. L.
+      - family-names: Hancock
+        given-names: R. E.
+      - family-names: Brinkman
+        given-names: F. S.
+      - family-names: Lynn
+        given-names: D. J.
+    year: 2020
+    journal: "PLOS Computational Biology"
+    doi: "10.1371/journal.pcbi.1007578"

@@ -50,6 +50,7 @@ from output import write_output
 import platform
 from itertools import chain
 import numpy as np
+from logger import console, logger
 
 # debugging
 import time
@@ -138,7 +139,7 @@ def myPopen(cmd):
             return stdout
     except subprocess.CalledProcessError as e:
         # Handle the subprocess.CalledProcessError exception
-        print("Error: Command '{}' returned non-zero exit status {}".format(e.cmd, e.returncode))
+        logger.error("Command '{}' returned non-zero exit status {}", e.cmd, e.returncode)
         return e.output  # Return the error message
     except Exception as e:
         # Handle other exceptions
@@ -1071,8 +1072,8 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
         #print('preds not mapped:')
         #print(pred_not_mapped)
 
-        print('names not mapped:')
-        print(len(np.unique(name_not_mapped)))
+        logger.warning("names not mapped:")
+        logger.warning("{}", len(np.unique(name_not_mapped)))
 
     # --- False-negative recovery ---
     # Build motif_score_dict: {(kinase_string_id, substrate_string_id): motif_score}

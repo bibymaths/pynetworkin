@@ -1,0 +1,47 @@
+{
+  "title": "pynetworkin: Kinase–substrate network prediction",
+  "description": "pynetworkin is a modernised implementation of the NetworKIN algorithm for kinase–substrate network prediction. It integrates pynetphorest (NetPhoREST atlas) for motif scoring, SQLAlchemy/PostgreSQL for data persistence, Numba for numerical acceleration, OmniPath and STRING v12.0 for live network data, and a novel false-negative recovery step based on network context proximity.",
+  "upload_type": "software",
+  "access_right": "open",
+  "license": "MIT",
+  "language": "eng",
+  "version": "0.1.0",
+  "publication_date": "2026-04-05",
+  "creators": [
+    {
+      "name": "Mishra, Abhinav",
+      "affiliation": "PLACEHOLDER Institution",
+      "orcid": "PLACEHOLDER"
+    }
+  ],
+  "keywords": [
+    "bioinformatics",
+    "phosphorylation",
+    "kinase",
+    "network",
+    "proteomics",
+    "NetworKIN",
+    "NetPhoREST",
+    "STRING",
+    "OmniPath",
+    "signalling",
+    "systems-biology"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.1093/nar/gkm902",
+      "relation": "isCitedBy",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "10.1371/journal.pcbi.1007578",
+      "relation": "isCitedBy",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "https://github.com/PLACEHOLDER/pynetworkin",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

@@ -1,61 +1,34 @@
-#!/usr/bin/env python3
+from __future__ import annotations
 
-"""
-NetworKIN(tm), (C) 2005,2006,2007,2013.
-Drs Rune Linding, Lars Juhl Jensen, Heiko Horn & Jinho Kim
+import gzip
+import os
+import platform
+import re
+import subprocess
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
 
-Usage: ./networkin.py Organism FastaFile SitesFile
-
-If no sites file is given NetworKIN will predict on all T/S/Y residues
-in the given sequences.
-"""
-
-### Coding strategy & TODO
-# FIX: filtering when no sites given
-# 2) add code for prediction of downstream recognition site (14-3-3 first)
-# 3) add code for predicting downstream binding module (14-3-3 first)
-# 4) finnish up output format and CLI options
-# 5) add code for doing 'pathway' analysis
-# 6) predict phenotypes
-###
-
-# Changelog
-# 21.10.06: tested blast -a 8 option, no differences on proteome
-# 21.10.06: Filtercode broken
-#			-fixed
-# 28.01.07: Testing autophosphorylation (self == 1 in update script)
-# 30.07.07: Working on v1.5 milestone
-# 07.05.08: Initiated 2.5 w. scaling factor
-# 11.07.13: New scoring scheme (Bayesian)
-# 03.02.14: Several minor bug fixes. blast sorting bug fix (k12nr -> k12gr)
-#
-
-
-
-
-import sys, os, subprocess, re, tempfile
-from optparse import OptionParser
 import glob
-from likelihood import ReadConversionTableBin
-from likelihood import ConvertScore2L
+import numpy as np
+import pandas as pd
+
+from likelihood import ConvertScore2L, ReadConversionTableBin
+from logger import logger
 from motif_scoring import score_sequences
 from inputs.phosphosites import fetch_phosphosite
 from inputs.string_network import fetch_string_network
-from recovery import recover_false_negatives
 from output import write_output
-import platform
-import numpy as np
-from logger import logger
+from recovery import recover_false_negatives
 
-# debugging
-import time
 
-# Weighting parameter, 0=only motif, 1=only STRING
-# estimated while benchmarking an then hardcoded here
-# feel free to play with it, but it is your own responsibility
 ALPHAS = {"9606": 0.85, "4932": 0.65}
-dSpeciesName = {"9606": "human", "4932": "yeast"}
-dPenalty = {"9606": {"hub penalty": 100, "length penalty": 800}, "4932": {"hub penalty": 170, "length penalty": 1000}}
+SPECIES_NAME = {"9606": "human", "4932": "yeast"}
+PENALTY = {
+    "9606": {"hub penalty": 100, "length penalty": 800},
+    "4932": {"hub penalty": 170, "length penalty": 1000},
+}
 
 NETWORKIN_SITE_FILE = 1
 PROTEOME_DISCOVERER_SITE_FILE = 2
@@ -63,1286 +36,728 @@ MAX_QUANT_DIRECT_OUTPUT_FILE = 3
 RUNES_SITE_FILE = 4
 MS_MCMC_FILE = 5
 
-global options
+
+@dataclass(slots=True)
+class AppConfig:
+    organism: str
+    fasta_path: str
+    sites_path: str | None
+    datadir: str
+    blast_dir: str
+    threads: int = 1
+    active_threads: int = 2
+    mode: str | bool = False
+    path_mode: str = "direct"
+    verbose: bool = False
+    fast: bool = False
+    leave_intermediates: bool = False
+    string_for_uncovered: bool = False
+    refresh: bool = False
+    result_dir: str = "results"
+    temp_dir: str = "tmp"
+
+    @property
+    def species_name(self) -> str:
+        return SPECIES_NAME[self.organism]
+
+    @property
+    def fasta_stem(self) -> str:
+        return Path(self.fasta_path).name
+
+    @property
+    def blast_output_path(self) -> str:
+        return f"{self.fasta_path}.{self.organism}.blast.out"
 
 
-# Temporary directory to store the files
-# tempfile.tempdir= '/tmp'
+@dataclass(slots=True)
+class RunArtifacts:
+    id_seq: dict[str, str]
+    id_pos_res: dict[str, dict[int, str]]
+    incoming2string: dict[str, dict[str, bool]]
+    string2incoming: dict[str, dict[str, bool]]
+    map_group_to_domain: dict[str, dict[str, list[str]]]
+    string_alias: dict[str, str]
+    string_desc: dict[str, str]
+    name_hash: dict[str, list[str]]
+    tree_pred_string_data: dict[str, dict[str, dict[str, Any]]]
+    id_pos_tree_pred: dict[str, Any]
 
-# Location of NetworKIN input files (string network, alias file etc.)
-# datadir = sys.argv[0].rsplit("/", 1)[0]+'/data'
-# global DATADIR
-# DATADIR = ""
 
-# Number of threads used for motif scoring and BLAST
-# setting it to a high number can also help in case NetworKIN uses too much memory
-# -> the more files, the less memory usage
-# global NUMBER_OF_PROCESSES
-# NUMBER_OF_PROCESSES = "1";
+@dataclass(slots=True)
+class PredictionStats:
+    proteins_seen: int = 0
+    proteins_mapped: int = 0
+    proteins_unmapped: int = 0
+    string_targets_seen: int = 0
+    string_scores_seen: int = 0
+    uncovered_branch_hits: int = 0
+    covered_branch_hits: int = 0
+    result_rows: int = 0
+    unmatched_names: int = 0
 
-# Should the analysis be limited to specific trees?
-# just comment it out if you want to predict on all
-# limitTrees = ['SH2']
-# limitTrees = ['KIN', "SH2", "PTP"]
-# limitTrees = ['KIN']
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "proteins_seen": self.proteins_seen,
+            "proteins_mapped": self.proteins_mapped,
+            "proteins_unmapped": self.proteins_unmapped,
+            "string_targets_seen": self.string_targets_seen,
+            "string_scores_seen": self.string_scores_seen,
+            "uncovered_branch_hits": self.uncovered_branch_hits,
+            "covered_branch_hits": self.covered_branch_hits,
+            "result_rows": self.result_rows,
+            "unmatched_names": self.unmatched_names,
+        }
 
-################################################################################
-#                                                                              #
-#                             the code starts here                             #
-#                                                                              #
-################################################################################
 
-class CSheet(list):
+class NetworkinError(RuntimeError):
     pass
 
 
-'''
-# Run system binary
-def myPopen(cmd):
-	try:
-		pipe = subprocess.Popen(cmd, shell=True, close_fds=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-		stdout = pipe.stdout.readlines()
-	except:
-		sys.stderr.write('ERROR executing: '+`cmd`+'\n')
-		sys.exit()
-	else:
-		return stdout 
-'''
+class CommandError(NetworkinError):
+    pass
 
 
-### myPopen:
-def myPopen(cmd):
-    if platform.system() == 'Windows':
-        sys.stderr.write('WINDOWS\n')
-        # Wrap the command to run in a Unix-like shell using WSL
-        command = f'wsl bash -c "{cmd}"'
-    else:
-        command = cmd
+def ensure_dirs(*paths: str) -> None:
+    for path in paths:
+        Path(path).mkdir(parents=True, exist_ok=True)
+        logger.info("Ensured directory exists: {}", path)
+
+
+def run_command(cmd: str) -> str:
+    command = f'wsl bash -c "{cmd}"' if platform.system() == "Windows" else cmd
+    logger.muted("Executing command: {}", command)
+
     try:
-        pipe = subprocess.Popen(command, shell=True, close_fds=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = pipe.communicate()
-        # Decode the byte strings to utf-8
-        stdout = stdout.decode('utf-8')
-        stderr = stderr.decode('utf-8')
-        if pipe.returncode != 0:
-            # If the command failed, print the stderr and raise an exception
-            error_message = 'ERROR executing: ' + repr(command) + '\n' + stderr
-            sys.stderr.write(error_message + '\n')
-            raise subprocess.CalledProcessError(pipe.returncode, command, output=error_message)
-        else:
-            # If the command succeeded, return the stdout
-            return stdout
-    except subprocess.CalledProcessError as e:
-        # Handle the subprocess.CalledProcessError exception
-        logger.error("Command '{}' returned non-zero exit status {}", e.cmd, e.returncode)
-        return e.output  # Return the error message
-    except Exception as e:
-        # Handle other exceptions
-        error_message = 'ERROR executing: ' + repr(command) + '\n' + str(e) + '\n'
-        sys.stderr.write(error_message)
-        return error_message
+        completed = subprocess.run(
+            command,
+            shell=True,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return completed.stdout
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        logger.error("Command failed with exit code {}: {}", exc.returncode, exc.cmd)
+        if stderr:
+            logger.error("stderr: {}", stderr)
+        raise CommandError(stderr or str(exc)) from exc
 
 
-# Read sequences from fasta file
-def readFasta(fastafile):
-    id_seq = {}
-    aminoacids = re.compile('[^ACDEFGHIKLMNPQRSTVWYXB]')
-    data = fastafile.readlines()
-    fastafile.close()
-    seq = ''
-    for line in data:
-        if line[0] != ';':
-            if line[0] == '>':
-                line = line.strip()
-                # id = line[1:].split(' ', 1)[0]
-                id = line[1:].split('_', 1)[0]
-                #				id = line[1:-1].split(' ', 1)[0]
-                seq = ''
-            else:
-                seq += aminoacids.sub('', line)
-                if len(seq) > 0:
-                    id_seq[id] = seq
-        else:
-            continue
+def read_fasta_file(path: str) -> dict[str, str]:
+    aminoacids = re.compile(r"[^ACDEFGHIKLMNPQRSTVWYXB]")
+    id_seq: dict[str, str] = {}
+    current_id: str | None = None
+    chunks: list[str] = []
+
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith(";"):
+                continue
+            if line.startswith(">"):
+                if current_id is not None:
+                    id_seq[current_id] = "".join(chunks)
+                current_id = line[1:].split("_", 1)[0]
+                chunks = []
+                continue
+            chunks.append(aminoacids.sub("", line))
+
+    if current_id is not None:
+        id_seq[current_id] = "".join(chunks)
+
+    logger.success("Loaded {} FASTA sequences", len(id_seq))
     return id_seq
 
 
-def CheckInputType(sitesfile):
-    f = open(sitesfile, 'r')
-    line = f.readline()
-    f.close()
-    if '\t' in line:
-        tokens = line.split('\t')
-    elif ',' in line:
-        tokens = line.split(',')
-    elif ' ' in line:
-        tokens = line.split(' ')
+def detect_site_file_type(path: str) -> int:
+    with open(path, "r", encoding="utf-8") as handle:
+        line = handle.readline().strip()
+
+    if not line:
+        raise NetworkinError(f"Empty sites file: {path}")
+
+    if "\t" in line:
+        tokens = line.split("\t")
+    elif "," in line:
+        tokens = line.split(",")
+    else:
+        tokens = line.split()
+
     if len(tokens) == 3:
         return NETWORKIN_SITE_FILE
-    elif len(tokens) == 2:
+    if len(tokens) == 2:
         return PROTEOME_DISCOVERER_SITE_FILE
-    elif tokens[0] == "Proteins" and tokens[4] == "Leading":
+    if len(tokens) > 4 and tokens[0] == "Proteins" and tokens[4] == "Leading":
         return MAX_QUANT_DIRECT_OUTPUT_FILE
-    elif tokens[1] == "phospho":
+    if len(tokens) > 1 and tokens[1] == "phospho":
         return RUNES_SITE_FILE
-    elif sitesfile.startswith('MS'):
+    if Path(path).name.startswith("MS"):
         return MS_MCMC_FILE
-    else:
-        sys.stderr("Unknown format of site file")
-        sys.exit()
+
+    raise NetworkinError(f"Unknown site file format: {path}")
 
 
-# Read phosphorylation sites from tsv file
-# id -> position -> residue
-def readPhosphoSites(sitesfile):
-    id_pos_res = {}
-    f = open(sitesfile, 'r')
-    if f:
-        data = f.readlines()
-        f.close()
-        for line in data:
-            tokens = line.split('\t')
-            id = tokens[0]
+def read_networkin_sites(path: str) -> dict[str, dict[int, str]]:
+    id_pos_res: dict[str, dict[int, str]] = {}
+    with open(path, "r", encoding="utf-8") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            tokens = line.rstrip("\n").split("\t")
+            if len(tokens) < 2:
+                logger.warning("Skipping malformed line {} in {}", line_no, path)
+                continue
+            protein_id = tokens[0]
             try:
                 pos = int(tokens[1])
-            except:
-                sys.stderr.write(line)
-                raise
-            try:
-                res = tokens[2][:-1]
-            except:
-                res = ""
-            if id in id_pos_res:
-                id_pos_res[id][pos] = res
-            else:
-                id_pos_res[id] = {pos: res}
-    else:
-        sys.stderr.write("Could not open site file: %s" % sitesfile)
-        sys.exit()
+            except ValueError as exc:
+                raise NetworkinError(f"Invalid position at line {line_no}: {line.rstrip()}") from exc
+            residue = tokens[2].strip() if len(tokens) > 2 else ""
+            id_pos_res.setdefault(protein_id, {})[pos] = residue
 
+    logger.success("Loaded phosphosite assignments for {} proteins", len(id_pos_res))
     return id_pos_res
 
 
-def readPhosphoSitesProteomeDiscoverer(fastafile, sitesfile):
-    # This function takes a tab-separated list of ProteinID \t Peptide, in ProteomeDiscoverer format (i.e. phosphosites listed as
-    # lowercase), maps the peptide to the full-length protein sequence and conducts the NetworKIN search.
-    #
-
-    # store all fasta sequences
-    fasta = open(fastafile).readlines()
-    fastadict = {}
-    for line in fasta:
-        if line[0] == ">":  # use this as each new entry in FASTA file starts with '>'
-            ensp = line.split()[0].strip(">")[0:15]  # strip the '>' symbol from the line before copying value into dictionary
-            # print ensp
-            fastadict[ensp] = ""
-        # retrieve the AA sequence belonging to individual ESPN identifiers and store as value for ESPN key
-        else:
-            seq = line.strip()
-            fastadict[ensp] = seq
-
-    # store all peptides in dictionary, with parent protein as key
-    peptides = open(sitesfile).readlines()
-    peptidedict = {}
-    for line in peptides[1:]:
-        line = line.strip()
-        if '\t' in line:
-            tokens = line.split('\t')
-        elif ',' in line:
-            tokens = line.split(',')
-        protID = tokens[0][1:-1]
-        peptide = tokens[1][1:-1]
-        if protID in peptidedict.keys():
-            if peptide in peptidedict[protID]:
-                pass
-            else:
-                peptidedict[protID][peptide] = ""
-        else:
-            peptidedict[protID] = {peptide: ""}
-
-    # now map peptide onto full length sequence, then get absolute phosphosite locations
-    id_pos_res = {}
-    c_sequence_not_found=0
-    for protID in peptidedict.keys():
-        for peptide in peptidedict[protID]:
-
-            # first make peptide upper case to match to FASTA sequence
-            UPPERpeptide = peptide.upper()
-            # print UPPERpeptide
-
-            # get parent protein sequence
-            sequence = fastadict[protID]
-            try:
-                peptideindex = sequence.index(UPPERpeptide)
-            except:
-                c_sequence_not_found+=1
-            # print peptideindex
-
-            x = 0
-            for letter in peptide:
-                if letter.islower():
-                    if letter == "s" or letter == "t" or letter == "y":
-
-                        phoslocation = peptideindex + x + 1
-                        phosresidue = sequence[phoslocation - 1]
-
-                        if protID in id_pos_res.keys():
-                            id_pos_res[protID][phoslocation] = phosresidue
-                        else:
-                            id_pos_res[protID] = {phoslocation: phosresidue}
-
-                    else:
-                        # non phosho modification
-                        pass
-                else:
-                    pass
-
-                x += 1
-    sys.stdout.write('sequences not found in fasta: '+str(c_sequence_not_found))
-    return id_pos_res
+def read_sheet(path: str, offset: int = 0) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    with open(path, "r", encoding="utf-8") as handle:
+        for _ in range(offset):
+            next(handle)
+        columns = handle.readline().strip().split("\t")
+        for line_no, line in enumerate(handle, start=offset + 2):
+            fields = line.strip().split("\t")
+            if len(fields) > len(columns):
+                raise NetworkinError(f"Too many columns at line {line_no} in {path}")
+            row = {col: fields[i] if i < len(fields) else "" for i, col in enumerate(columns)}
+            rows.append(row)
+    logger.info("Loaded {} tabular rows from {}", len(rows), path)
+    return rows
 
 
-# return a list of dictionaries
-# Usage l[index][column name]
-def ReadSheet(fname, offset=0):
-    l = CSheet()
-
-    f = open(fname, 'r')
-
-    for i in range(offset):
-        f.readline()
-
-    columns = f.readline().strip().split('\t')
-
-    l.columns = columns
-    for line in f.readlines():
-        instance = {}
-        l.append(instance)
-        fields = line.strip().split('\t')
-
-        if len(fields) > len(columns):
-            sys.stderr.write("Error in data file")
-            sys.stderr.write(columns)
-            sys.stderr.write(fields)
-            raise
-
-        for i in range(len(columns)):
-            try:
-                instance[columns[i]] = fields[i]
-            except IndexError:
-                instance[columns[i]] = ''
-
-    # sys.stderr.write("No. of entries in file input: %d" % len(l))
-    f.close()
-
-    return l
+def insert_multilevel_list(mapping: dict[str, Any], keys: list[str], value: Any) -> None:
+    cursor = mapping
+    for key in keys[:-1]:
+        cursor = cursor.setdefault(key, {})
+    cursor.setdefault(keys[-1], []).append(value)
 
 
-def readPhosphoSitesMaxQuant(fname, only_leading=False):
-    id_pos_res = {}
+def set_multilevel_value(mapping: dict[str, Any], keys: list[str], value: Any) -> None:
+    cursor = mapping
+    for key in keys[:-1]:
+        cursor = cursor.setdefault(key, {})
+    previous = cursor.get(keys[-1])
+    if previous is not None and previous != value:
+        logger.warning("Replacing value at nested key path: {}", " -> ".join(keys))
+    cursor[keys[-1]] = value
 
-    phosphosites = ReadSheet(fname)
 
-    for site in phosphosites:
-        Ids = site["Proteins"].split(';')
-        positions = [int(x) for x in site["Positions within proteins"].split(';')]
-        aa = site["Amino acid"]
+def read_group_to_domain_map(default_path: str) -> dict[str, dict[str, list[str]]]:
+    mapping: dict[str, dict[str, list[str]]] = {}
+    hanno_path = Path("data/hanno_group_human_protein_name_map.tsv")
+    source = hanno_path if hanno_path.exists() else Path(default_path)
 
-        leading_protein_ids = site["Leading proteins"].split(';')
-
-        for i in range(len(Ids)):
-            Id = Ids[i]
-            pos = positions[i]
-
-            if only_leading and not Id in leading_protein_ids:
+    with open(source, "r", encoding="utf-8") as handle:
+        for line in handle:
+            tokens = line.split()
+            if len(tokens) < 3:
                 continue
+            name = tokens[3] if source == hanno_path and len(tokens) > 3 else tokens[2]
+            insert_multilevel_list(mapping, tokens[:2], name)
 
-            if Id in id_pos_res:
-                id_pos_res[Id][pos] = aa
-            else:
-                id_pos_res[Id] = {pos: aa}
-
-    return id_pos_res
-
-def readRunessitesfile(sitesfile):
-    id_pos_res = {}
-    f = open(sitesfile, 'r')
-    if f:
-        data = f.readlines()
-        f.close()
-        for line in data:
-            tokens = line.split(' ')
-            id = tokens[3]
-            res_pos = tokens[2]
-            pos = int(res_pos[2:])
-            res = res_pos[0]
-            if id in id_pos_res:
-                id_pos_res[id][pos] = res
-            else:
-                id_pos_res[id] = {pos: res}
-    else:
-        sys.stderr.write("Could not open site file: %s" % sitesfile)
-        sys.exit()
-
-    return id_pos_res
-
-def readMCMCssitesfile(sitesfile):
-    id_pos_res = {}
-    f = open(sitesfile, 'r')
-    if f:
-        data = f.readlines()
-        f.close()
-        for line in data:
-            tokens = line.split(' ')
-            id = tokens[0]
-            if (res_pos!= '') or (res_pos!= 'M_'):
-                res_pos = tokens[2]
-                pos = int(res_pos[2:])
-                res = res_pos[0]
-                if id in id_pos_res:
-                    id_pos_res[id][pos] = res
-                else:
-                    id_pos_res[id] = {pos: res}
-    else:
-        sys.stderr.write("Could not open site file: %s" % sitesfile)
-        sys.exit()
-
-    return id_pos_res
+    logger.success("Loaded group-to-domain map from {}", source)
+    return mapping
 
 
-'''
-#Alias hashes
-def readAliasFiles(organism, datadir):
-	alias_hash = {}
-	desc_hash = {}
+def read_alias_files(organism: str, datadir: str, map_group_to_domain: dict[str, dict[str, list[str]]]) -> tuple[dict[str, str], dict[str, str], dict[str, list[str]]]:
+    alias_hash: dict[str, str] = {}
+    desc_hash: dict[str, str] = {}
+    name_hash: dict[str, list[str]] = {}
 
-	# Read alias db
-	try:
-		alias_db = myPopen('gzip -cd %s/%s.alias_best.tsv.gz'%(datadir, organism))
-		for line in alias_db:
-			(taxID, seqID, alias) = line.strip().split('\t')[:3]
-			alias_hash[seqID] = alias
-	except:
-		sys.stderr.write("No aliases available for organism: '%s'\n"%organism)
+    allowed_names = {
+        name
+        for tree_map in map_group_to_domain.values()
+        for pred_names in tree_map.values()
+        for name in pred_names
+    }
 
-	# Read desc db
-	try:
-		desc_db = myPopen('gzip -cd %s/%s.text_best.tsv.gz'%(datadir, organism))
-		for line in desc_db:
-			(taxID, seqID, desc) = line.split('\t')[:3]
-			desc_hash[seqID] = desc
-	except:
-		sys.stderr.write("No descriptions available for organism: '%s'\n"%organism)
-
-	return alias_hash, desc_hash
-'''
-
-
-###  my Alias hashes
-def readAliasFiles(organism, datadir,map_group_to_domain):
-    alias_hash = {}
-    desc_hash = {}
-    name_hash = {}
-    names_list=[]
-    for tree in map_group_to_domain:
-        for pred in map_group_to_domain[tree]:
-            #names_list.append(map_group_to_domain[tree][pred])
-            for name in map_group_to_domain[tree][pred]:
-                if name not in names_list:
-                    names_list.append(name)
-    # Read desc db
-    try:
-        desc_db = myPopen('gzip -cd %s/%s.text_best.v9.0.tsv.gz' % (datadir, organism))
-        # desc_db = myPopen('gzip -cd %s/%s.protein.info.v12.0.txt.gz'%(datadir, organism))
-        desc_db = desc_db.split('\n')
-        for line in desc_db:
-            # print(line)
-            (taxID, seqID, desc) = line.split('\t')[:3]
-            desc_hash[seqID] = desc
-    except:
-        sys.stderr.write("No descriptions available for organism: '%s'\n" % organism)
+    desc_file = os.path.join(datadir, f"{organism}.text_best.v9.0.tsv.gz")
+    alias_file = os.path.join(datadir, f"{organism}.protein.aliases.v12.0.txt.gz")
 
     try:
-        # desc_db = myPopen('gzip -cd %s/%s.text_best.v9.0.tsv.gz'%(datadir, organism))
-        name_db = myPopen('gzip -cd %s/%s.protein.aliases.v12.0.txt.gz' % (datadir, organism))
-        name_db = name_db.split('\n')
-        name_hash={}
-        for line in name_db:
-            # print(line)
-            (seqID, alias, source) = line.split('\t')
-            key=seqID[5:]
-            if key in name_hash.keys():
-                if alias in name_hash[key]:
-                    continue
-                else:
-                    name_hash[key].append(alias)
-            else:
-                name_hash[key]=[alias]
-    except:
-        sys.stderr.write("No names available for organism: '%s'\n" % organism)
-    for id in name_hash.keys():
-        flag=False
-        for name in name_hash[id]:
-            if name in names_list:
-                alias_hash[id]=name
-                flag=True
-        if not flag:
-            alias_hash[id]=id
+        for line in run_command(f"gzip -cd {desc_file}").splitlines():
+            if not line.strip():
+                continue
+            tax_id, seq_id, desc = line.split("\t")[:3]
+            desc_hash[seq_id] = desc
+    except Exception as exc:
+        logger.warning("Description aliases unavailable for {}: {}", organism, exc)
 
+    try:
+        for line in run_command(f"gzip -cd {alias_file}").splitlines():
+            if not line.strip():
+                continue
+            seq_id, alias, source = line.split("\t")
+            key = seq_id[5:]
+            name_hash.setdefault(key, [])
+            if alias not in name_hash[key]:
+                name_hash[key].append(alias)
+    except Exception as exc:
+        logger.warning("Protein aliases unavailable for {}: {}", organism, exc)
+
+    for seq_id, aliases in name_hash.items():
+        alias_hash[seq_id] = next((a for a in aliases if a in allowed_names), seq_id)
+
+    logger.success("Loaded {} preferred aliases and {} descriptions", len(alias_hash), len(desc_hash))
     return alias_hash, desc_hash, name_hash
 
 
-def ReadLines(fname):
-    f = open(fname)
-    lines = f.readlines()
-    f.close()
-    return lines
+def map_peptides_to_string(config: AppConfig, id_pos_res: dict[str, dict[int, str]], id_seq: dict[str, str]) -> tuple[dict[str, dict[str, bool]], dict[str, dict[str, bool]]]:
+    logger.header("Mapping query proteins to STRING IDs via BLAST")
+    incoming2string: dict[str, dict[str, bool]] = {}
+    string2incoming: dict[str, dict[str, bool]] = {}
 
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as blast_tmpfile:
+        iterable = id_pos_res.keys() if id_pos_res else id_seq.keys()
+        for protein_id in iterable:
+            seq = id_seq.get(protein_id)
+            if not seq:
+                logger.warning("No sequence available for {}", protein_id)
+                continue
+            blast_tmpfile.write(f">{protein_id}\n{seq}\n")
+        query_path = blast_tmpfile.name
 
-def WriteString(fname, s):
-    f = open(fname, 'w')
-    f.write(s)
-    f.close()
+    blast_db = os.path.join(config.datadir, f"{config.organism}.protein.sequences.v12.0.fa")
+    if not os.path.isfile(blast_db + ".pin"):
+        makeblastdb = f"{config.blast_dir.rsplit('/', 1)[0]}/makeblastdb"
+        command = f"{makeblastdb} -in {blast_db} -out {blast_db} -parse_seqids -dbtype prot"
+        logger.warning("BLAST DB missing. Initializing database.")
+        run_command(command)
 
+    blastp = f"{config.blast_dir}blastp"
+    command = (
+        f"{blastp} -num_threads {config.threads} -evalue 1e-10 "
+        f"-db {blast_db} -query {query_path} -outfmt 6 | sort -k12gr"
+    )
 
-
-def mapPeptides2STRING(blastDir, organism, fastafilename, id_pos_res, id_seq, number_of_processes, datadir, fast=False,
-                       leave_intermediates=False):
-    sys.stderr.write("Mapping using blast\n")
-    incoming2string = {}
-    string2incoming = {}
-
-    # Speedup, only blast sequences with site specified
-    blast_tmpfile = tempfile.NamedTemporaryFile(mode='w',delete=False)
-    if id_pos_res == {}:
-        for id in id_seq:
-            blast_tmpfile.write('>' + id + '\n' + id_seq[id] + '\n')
+    if config.fast and os.path.isfile(config.blast_output_path):
+        logger.info("Using cached BLAST output: {}", config.blast_output_path)
+        with open(config.blast_output_path, "r", encoding="utf-8") as handle:
+            blast_lines = handle.read().splitlines()
     else:
-        for id in id_pos_res:
-            try:
-                blast_tmpfile.write('>' + id + '\n' + id_seq[id] + '\n')
-            except:
-                sys.stderr.write("No sequence available for '%s'\n" % id)
-    blast_tmpfile.flush()
+        blast_lines = run_command(command).splitlines()
+        if config.leave_intermediates:
+            with open(config.blast_output_path, "w", encoding="utf-8") as handle:
+                handle.write("\n".join(blast_lines))
 
-    blastDB = os.path.join(datadir, "%s.protein.sequences.v12.0.fa" % (organism)).replace(' ', '\\ ')
-
-    # Check if blast database is actually initialized, if not: do it
-    if not os.path.isfile(blastDB + '.pin'):
-        command = f"{blastDir.rsplit('/', 1)[0]}/makeblastdb -in {blastDB} -out {blastDB} -parse_seqids -dbtype prot"
-        sys.stderr.write("Looks like blast database is not initialized, trying to run:\n%s\n" % command)
-        myPopen(command)
-
-    #command = "%s -F F -a %s -p blastp -e 1e-10 -m 8 -d %s -i %s | sort -k12gr" % (blastDir, number_of_processes, blastDB, blast_tmpfile.name)
-    command = "%sblastp -num_threads %s -evalue 1e-10 -db %s -query %s -outfmt 6 | sort -k12gr" % (blastDir, number_of_processes, blastDB, blast_tmpfile.name)
-
-    # to save time - jhkim
-    if fast and os.path.isfile(fn_blast_output):
-        blast_out = ReadLines(fn_blast_output)
-    else:
-        blast_out = myPopen(command)
-        if leave_intermediates:
-            WriteString(fn_blast_output, "".join(blast_out))
-
-    blast_out=blast_out.split('\n')
-    for line in blast_out:
-        #sys.stderr.write(line+'\n')
-        if line == '':
+    for line in blast_lines:
+        if not line.strip():
             continue
-        tokens = line.split('\t')
+        tokens = line.split("\t")
         incoming = tokens[0]
-
-        if incoming not in incoming2string:
-            # get rid of organism prefix
-            string = tokens[1].replace("%s." % organism, "")
-            identity = float(tokens[2])
-            evalue = float(tokens[-2])
-
-            if string in string2incoming:
-                sys.stderr.write('Best hit for ' + incoming + ' is not reciprocal\n')
-            if identity < 90:
-                #sys.stderr.write('Best hit for ' + incoming + ' has only ' + format.fix(identity, 2) + ' %identity\n')
-                sys.stderr.write('Best hit for ' + incoming + ' has only {:.2f} %identity\n'.format(identity))
-            if evalue > 1e-40:
-                #sys.stderr.write('Best hit for ' + incoming + ' has high E-value ' + format.sci(evalue, 2) + ' \n')
-                sys.stderr.write('Best hit for ' + incoming + ' has high E-value {:.2e} \n'.format(evalue))
-            if incoming in incoming2string:
-                incoming2string[incoming][string] = True
-            else:
-                incoming2string[incoming] = {string: True}
-            if string in string2incoming:
-                string2incoming[string][incoming] = True
-            else:
-                string2incoming[string] = {incoming: True}
-        else:
-            pass
-    return incoming2string, string2incoming
-
-# Random mapping of incoming identifiers to string
-def mapRandom(id_seq):
-    sys.stderr.write("Mapping random\n")
-    import random
-
-    incoming2string = {}
-    string2incoming = {}
-
-    stringIDs = []
-    file = open('%s/%s.protein.sequences.fa' % (options.datadir, organism), 'r')
-    data = file.readlines()
-    file.close()
-
-    for line in data:
-        if line[0] == '>':
-            name = line[1:-1]
-            stringIDs.append(name)
-            string2incoming[name] = {}
-    max = len(stringIDs) - 1
-
-    for incoming in id_seq:
-        if incoming not in incoming2string:
-            int = random.randint(0, max)
-            string = stringIDs[int]
-            incoming2string[incoming] = {string: True}
-            if string in string2incoming:
-                string2incoming[string][incoming] = True
-            else:
-                string2incoming[string] = {incoming: True}
-    return incoming2string, string2incoming
-
-
-# In case we run NetworKIN on the same sequence set we use in STRING, we can skip the mapping by blast
-def mapOne2one(id_seq):
-    sys.stderr.write("Mapping one2one\n")
-    incoming2string = {}
-    string2incoming = {}
-    for incoming in id_seq:
-        incoming2string[incoming] = {incoming: True}
-        string2incoming[incoming] = {incoming: True}
-    return incoming2string, string2incoming
-
-
-# In case we have a better mapping then we can expect from blasting, we can use an external file to do so
-# file format:
-# incoming ID -> STRING ID
-def mapFromFile(filename):
-    sys.stderr.write("Mapping using external mapping file\n")
-    incoming2string = {}
-    string2incoming = {}
-
-    command = "cat %s" % (filename)
-    try:
-        mappingFile = myPopen(command)
-    except:
-        sys.stderr.write("Going to sleep, crashed with '%s'\n" % command)
-        time.sleep(3600)
-
-    for line in mappingFile:
-        if (re.match('^#', line)):
-            continue
-
-        line = line.strip()
-        tokens = line.split('\t')
-
-        incoming = tokens[0]
-        string = tokens[1]
-
         if incoming in incoming2string:
-            incoming2string[incoming][string] = True
-        else:
-            incoming2string[incoming] = {string: True}
-        if string in string2incoming:
-            string2incoming[string][incoming] = True
-        else:
-            string2incoming[string] = {incoming: True}
+            continue
 
+        string_id = tokens[1].replace(f"{config.organism}.", "")
+        identity = float(tokens[2])
+        evalue = float(tokens[-2])
+
+        if identity < 90:
+            logger.warning("Best hit for {} has low identity: {:.2f}%", incoming, identity)
+        if evalue > 1e-40:
+            logger.warning("Best hit for {} has weak E-value: {:.2e}", incoming, evalue)
+        if string_id in string2incoming:
+            logger.warning("Best hit for {} is not reciprocal", incoming)
+
+        incoming2string.setdefault(incoming, {})[string_id] = True
+        string2incoming.setdefault(string_id, {})[incoming] = True
+
+    logger.success("Mapped {} input proteins to STRING IDs", len(incoming2string))
     return incoming2string, string2incoming
 
 
-# Load the precalculated STRING network file
-def loadSTRINGdata(string2incoming, datadir,alias_hash, number_of_processes):
-    # command = 'gzip -cd %s/%s.string_data.tsv.gz'%(datadir, organism)
-
-    # fn_bestpath = "%s/%s.string_000_%04d_%04d.tsv.gz" % (os.path.join(datadir, "string_data"), organism, dPenalty[organism]["hub penalty"], dPenalty[organism]["length penalty"])
-    fn_bestpath = "%s/%s.bestpath_0340_0950.v9.tsv.gz" % (os.path.join(datadir, "string_data"), organism)
-    #fn_bestpath = "%s/%s.protein.links.v12.0.txt.gz" % (os.path.join(datadir, "string_data"), organism)
-
+def load_string_data(config: AppConfig, string2incoming: dict[str, dict[str, bool]], alias_hash: dict[str, str]) -> dict[str, dict[str, dict[str, Any]]]:
+    fn_bestpath = os.path.join(config.datadir, "string_data", f"{config.organism}.bestpath_0340_0950.v9.tsv.gz")
     if not os.path.isfile(fn_bestpath):
-        sys.stderr.write("Best path file does not exist: %s" % fn_bestpath)
+        raise NetworkinError(f"Best path file missing: {fn_bestpath}")
 
-    '''	    
-	command = "gzip -cd %s" % fn_bestpath
+    tree_pred_string_data: dict[str, dict[str, dict[str, Any]]] = {}
+    edge_count = 0
 
-	try:
-		data = myPopen(command)
-	except:
-		sys.stderr.write("Error loading STRING data using '%s', sleeping fo 1h.\n"%command)
-		time.sleep(3600)
-	'''
+    with gzip.open(fn_bestpath, "rt", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            edge_count += 1
+            tokens = line.rstrip("\n").split("\t")
 
-    tree_pred_string_data = {}
+            parsed = _parse_string_line(tokens, config.organism, alias_hash)
+            if parsed is None:
+                continue
 
-    # for memory efficiency
-    import gzip
-    f = gzip.open(fn_bestpath)
-    f = f.read().decode('utf-8')
-    #print(f)
-    f = f.split('\n')
-    #print(f)
-    c=0
-    for line in f:
-        #print(line)
-        c+=1
-        if line == '':
-            continue
-        # line = line.strip()
-        #tokens = line.split(' ')
-        tokens = line.split('\t')
-        #print(len(tokens))
-        if len(tokens) == 8:
-            (tree, group, name, string1, string2, stringscore, stringscore_indirect, path) = tokens
-        if len(tokens) == 7:
-            (tree, group, name, string1, string2, stringscore, stringscore_indirect) = tokens
-        elif len(tokens) == 6:
-            (tree, group, name, string1, string2, stringscore) = tokens
-            stringscore = float(stringscore) / 1000
-            string1 = string1.replace(f'{organism}.', '')
-            string2 = string2.replace(f'{organism}.', '')
-        elif len(tokens) == 3:
-            (string1, string2, stringscore) = tokens
-            stringscore = float(stringscore) / 1000
-            string1 = string1.replace(f'{organism}.', '')
-            string2 = string2.replace(f'{organism}.', '')
-            name = alias_hash[string1]
-        '''
-		if len(tokens) == 8:
-			(tree, group, name, string1, string2, stringscore, stringscore_indirect, path) = tokens
-		elif len(tokens) == 7:
-			(tree, group, name, string1, string2, stringscore, stringscore_indirect) = tokens
-			path = ""	# path to itself,  we will miss the path information
-		elif len(tokens) == 6:
-			(name, string1, string2, stringscore, stringscore_indirect, path) = tokens
-		elif len(tokens) == 5:
-			(name, string1, string2, stringscore, stringscore_indirect) = tokens
-			path = ""	# path to itself,  we will miss the path information
-		'''
+            name, string1, string2, direct_score, indirect_score, path = parsed
+            if string2 not in string2incoming:
+                continue
 
-        if string2 in string2incoming:
-            if string2 in tree_pred_string_data:
-                tree_pred_string_data[string2][string1] = {"_name": name}
-            else:
-                tree_pred_string_data[string2] = {string1: {"_name": name}}
-            if options.path == "direct":
-                tree_pred_string_data[string2][string1]["_score"] = float(stringscore)
-            elif options.path == "indirect":
-                tree_pred_string_data[string2][string1]["_score"] = float(stringscore_indirect)  # Use indirect path
-            else:
-                raise "Path information should be either direct or indirect."
-            if len(tokens) == 9:
-                tree_pred_string_data[string2][string1]["_path"] = path
-            elif (len(tokens) == 6) or (len(tokens) == 3):
-                tree_pred_string_data[string2][string1]["_path"] = 'notdef'
-                '''
-        elif string1 in string2incoming:
-            if string1 in tree_pred_string_data:
-                tree_pred_string_data[string1][string2] = {"_name": name}
-            else:
-                tree_pred_string_data[string1] = {string2: {"_name": name}}
+            tree_pred_string_data.setdefault(string2, {}).setdefault(string1, {"_name": name})
+            score = direct_score if config.path_mode == "direct" else indirect_score
+            tree_pred_string_data[string2][string1]["_score"] = score
+            tree_pred_string_data[string2][string1]["_path"] = path
 
-            if options.path == "direct":
-                tree_pred_string_data[string1][string2]["_score"] = float(stringscore)
-            elif options.path == "indirect":
-                tree_pred_string_data[string1][string2]["_score"] = float(stringscore_indirect)  # Use indirect path
-            else:
-                raise "Path information should be either direct or indirect."
-            if len(tokens) == 9:
-                tree_pred_string_data[string1][string2]["_path"] = path
-            elif (len(tokens) == 6) or (len(tokens) == 3):
-                tree_pred_string_data[string1][string2]["_path"] = 'notdef'
-                '''
-        else:
-            pass
-
-    # f.close()
-    sys.stderr.write("network edges: %s \n" % c)
+    logger.success("Loaded {} STRING best-path edges", edge_count)
     return tree_pred_string_data
 
 
-def InsertValueIntoMultiLevelDict(d, keys, value):
-    for i in range(len(keys) - 1):
-        # if not d.has_key(keys[i]):
-        if not (keys[i] in d.keys()):
-            d[keys[i]] = {}
-        d = d[keys[i]]
-
-    if not (keys[-1] in d.keys()):
-        d[keys[-1]] = []
-    d[keys[-1]].append(value)
-
-
-def ReadGroup2DomainMap(path_group2domain_map):
-    map_group2domain = {}  # KIN   group   name
-    use_hannos=True
-    if use_hannos:
-        f = open("data/hanno_group_human_protein_name_map.tsv", "r")
-        for line in f.readlines():
-            tokens = line.split()
-            name = tokens[3]
-            #name = tokens[2]
-            InsertValueIntoMultiLevelDict(map_group2domain, tokens[:2], name)
-        f.close()
-    else:
-        f = open(path_group2domain_map, "r")
-        for line in f.readlines():
-            tokens = line.split()
-            name = tokens[2]
-            InsertValueIntoMultiLevelDict(map_group2domain, tokens[:2], name)
-        f.close()
-    return map_group2domain
+def _parse_string_line(tokens: list[str], organism: str, alias_hash: dict[str, str]) -> tuple[str, str, str, float, float, str] | None:
+    if len(tokens) == 8:
+        tree, group, name, string1, string2, s_direct, s_indirect, path = tokens
+        return name, string1, string2, float(s_direct), float(s_indirect), path
+    if len(tokens) == 7:
+        tree, group, name, string1, string2, s_direct, s_indirect = tokens
+        return name, string1, string2, float(s_direct), float(s_indirect), "notdef"
+    if len(tokens) == 6:
+        tree, group, name, string1, string2, s_direct = tokens
+        string1 = string1.replace(f"{organism}.", "")
+        string2 = string2.replace(f"{organism}.", "")
+        score = float(s_direct) / 1000.0
+        return name, string1, string2, score, score, "notdef"
+    if len(tokens) == 3:
+        string1, string2, s_direct = tokens
+        string1 = string1.replace(f"{organism}.", "")
+        string2 = string2.replace(f"{organism}.", "")
+        score = float(s_direct) / 1000.0
+        return alias_hash.get(string1, string1), string1, string2, score, score, "notdef"
+    return None
 
 
-def SetValueIntoMultiLevelDict(d, keys, value):
-    for i in range(len(keys) - 1):
-        # if not d.has_key(keys[i]):
-        if keys[i] not in d:
-            d[keys[i]] = {}
-        d = d[keys[i]]
-    if (keys[-1] in d) and type(d[keys[-1]]) != type(value):
-        sys.stderr.write("Causion: multi-dict already has value and try to assign a value of different type")
-        pass
-    if (keys[-1] in d):
-        if d[keys[-1]] != value:
-            # sys.stderr.write("This operation replaces a value (%s)" % " ".join(map(lambda(x):str(x), keys)))
-            sys.stderr.write("This operation replaces a value ({})".format(' '.join(map(str, keys))))
-    d[keys[-1]] = value
+def load_conversion_tables(dir_path: str, species: str, verbose: bool = False) -> dict[str, Any]:
+    tables: dict[str, Any] = {}
+    pattern = re.compile(r"conversion_tbl_([a-z]+)_smooth_([a-z]+)_([A-Z0-9]+)_([a-zA-Z0-9_/-]+)")
 
-
-
-def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string_alias,name_hash, string_desc, organism, mode,
-                dir_likelihood_conversion_tbl, map_group2domain,res_dir, fn_fasta):
-    ALPHA = ALPHAS[organism]
-    species = dSpeciesName[organism]
-
-    from pathlib import Path
-    csv_filename = os.path.join(res_dir, f"{Path(fn_fasta).name}.result.tsv")
-    predictions = []
-
-    dLRConvTbl = {}
-    for fname in glob.glob(os.path.join(dir_likelihood_conversion_tbl, "conversion_tbl_*_smooth*")):
-        score_src, species_of_conversion_table, tree, player_name = \
-        re.findall("conversion_tbl_([a-z]+)_smooth_([a-z]+)_([A-Z0-9]+)_([a-zA-Z0-9_/-]+)",
-                   os.path.basename(os.path.splitext(fname)[0]))[0]
-        # Normalise the legacy filename tag to a uniform in-memory key.
-        # Conversion table files are named either "…_string_…" (STRING co-expression
-        # likelihood) or "…_<motif-scorer>_…" (motif probability likelihood).
-        # Map all non-"string" tags to "motif" so downstream lookups are scorer-agnostic.
-        if score_src == "string":
-            score_src = "string"
-        else:
-            score_src = "motif"
-
-        if species_of_conversion_table != species:
+    for fname in glob.glob(os.path.join(dir_path, "conversion_tbl_*_smooth*")):
+        match = pattern.findall(os.path.basename(os.path.splitext(fname)[0]))
+        if not match:
             continue
-
+        score_src, species_name, tree, player_name = match[0]
+        if species_name != species:
+            continue
+        score_kind = "string" if score_src == "string" else "motif"
         conversion_tbl = ReadConversionTableBin(fname)
-        SetValueIntoMultiLevelDict(dLRConvTbl, [species_of_conversion_table, tree, player_name, score_src],
-                                   conversion_tbl)
+        set_multilevel_value(tables, [species_name, tree, player_name, score_kind], conversion_tbl)
+        if verbose:
+            logger.muted("Loaded conversion table: {} {} {} {}", species_name, tree, player_name, score_kind)
 
-        if options.verbose:
-            sys.stderr.write("Conversion table %s %s %s %s\n" % (
-            species_of_conversion_table, tree, player_name, score_src))
-
-    c_np = 0
-    c_map = 0
-    c_notmap = 0
-    c_string = 0
-    c_stringscore=0
-    c_if=0
-    c_else=0
-    c_res = 0
-    pred_not_mapped=[]
-    name_not_mapped=[]
-    # For each scored protein ID
-    for id in id_pos_tree_pred:
-        c_np += 1
-        # We have a mapping to STRING
-        if id in incoming2string:
-            c_map+=1
-            # For each predicted position
-            for pos in id_pos_tree_pred[id]:
-                # For each of the trees (KIN, SH@ etc.)
-                for tree in id_pos_tree_pred[id][pos]:
-                    score_results = {}
-                    # For each single classifier KIN eg.
-                    for pred in id_pos_tree_pred[id][pos][tree]:
-                        #print(pred)
-                        # For each mapped sequence
-                        for string1 in incoming2string[id]:
-                            if string1 in string_alias:
-                                bestName1 = string_alias[string1]
-                            else:
-                                bestName1 = 'notdef'
-                            if string1 in string_desc:
-                                desc1 = string_desc[string1]
-                            else:
-                                desc1 = 'notdef'
-                            # if string in string network
-                            if string1 in tree_pred_string_data:
-                                c_string+=1
-                                (res, peptide, motifScore) = id_pos_tree_pred[id][pos][tree][pred]
-                                for string2 in tree_pred_string_data[string1]:
-
-                                    if string2 in string_alias:
-                                        bestName2 = string_alias[string2]
-                                    else:
-                                        bestName2 = 'notdef'
-                                    if string2 in string_desc:
-                                        desc2 = string_desc[string2]
-                                    else:
-                                        desc2 = 'notdef'
-                                    stringScore = tree_pred_string_data[string1][string2]["_score"]
-                                    c_stringscore+=1
-                                    #path = tree_pred_string_data[string1][string2]["_path"]
-                                    path='notdef'
-                                    name = tree_pred_string_data[string1][string2]["_name"]  # string2 = kinase
-                                    '''
-                                    names=name_hash[string2]
-                                    #names=[name]
-                                    '''
-                                    try:
-                                        map_names=map_group2domain[tree][pred]
-                                    except:
-                                        pred_not_mapped.append(pred)
+    logger.success("Loaded likelihood conversion tables for species {}", species)
+    return tables
 
 
+def filter_and_rank_predictions(predictions: list[dict[str, Any]], min_networkin: float = 2.0, min_motif: float = 0.05, top_k: int = 5) -> list[dict[str, Any]]:
+    df = pd.DataFrame(predictions)
+    if df.empty:
+        logger.warning("No predictions available after scoring")
+        return predictions
 
-                                    '''
-                                    flag=False
-                                    for mn in map_names:
-                                        pattern = rf"(?i)\b{re.escape(mn)}\w*\b"
-                                        l = [n for n in names if re.search(pattern,n)]
-                                    for n in names:
-                                        pattern = rf"(?i)\b{re.escape(n)}\w*\b"
-                                        l1 = [mn for mn in map_names if re.search(pattern,mn)]
-                                    if len(l)>0 or len(l1)>0 or any(n in names for n in map_names):
-                                        flag=True
-                                    '''
-                                    #flag=any(n in names for n in map_names)
-                                    #if not flag:
-                                    #    name_not_mapped.append(name)
-                                    # sys.stderr.write("%s %s %s\n" % (tree, pred, name))
+    filtered = df[(df["NetworKIN score"] > min_networkin) & (df["Motif probability"] > min_motif)].copy()
+    filtered = filtered.sort_values(["Name", "Position", "NetworKIN score"], ascending=[True, True, False])
+    filtered = filtered.groupby(["Name", "Position"], as_index=False).head(top_k)
 
-                                    if (tree not in map_group2domain.keys()) or (pred not in map_group2domain[tree].keys()) or (name not in map_group2domain[tree][pred]):
-                                        #if (tree not in map_group2domain.keys()) or (pred not in map_group2domain[tree].keys()) or not flag:
-                                        if name not in map_group2domain[tree][pred]:
-                                            name_not_mapped.append(name)
-                                        if options.string_for_uncovered:
-                                            if species == "human":
-                                                if tree in ["1433", "BRCT", "WW", "PTB", "WD40", "FHA"]:
-                                                    conversion_tbl_string = dLRConvTbl[species]["SH2"]["general"][
-                                                        "string"]
-                                                else:
-                                                    conversion_tbl_string = dLRConvTbl[species][tree]["general"][
-                                                        "string"]
-                                            elif species == "yeast":
-                                                conversion_tbl_string = dLRConvTbl[species][tree]["general"]["string"]
-                                            else:
-                                                raise "This species is not supported"
+    logger.success("Retained {} predictions after ranking and filtering", len(filtered))
+    return filtered.to_dict(orient="records")
 
-                                            likelihood_motif = 1
-                                            likelihood_string = ConvertScore2L(stringScore, conversion_tbl_string)
-                                            unified_likelihood = likelihood_motif * likelihood_string
-                                            networkinScore = unified_likelihood
 
-                                            # NetworKIN result
-                                            row = None
-                                            if networkinScore >= 0.02:
-                                                c_if += 1
-                                                row = {
-                                                    "Name": id,
-                                                    "Position": res + str(pos),
-                                                    "Tree": tree,
-                                                    "Motif Group": pred,
-                                                    "Kinase/Phosphatase/Phospho-binding domain": name,
-                                                    "NetworKIN score": float(format(networkinScore, ".4f")),
-                                                    "Motif probability": float(format(motifScore, ".4f")),
-                                                    "STRING score": float(format(stringScore, ".4f")),
-                                                    "Target STRING ID": string1,
-                                                    "Kinase STRING ID": string2,
-                                                    "Target Name": bestName1,
-                                                    "Kinase Name": bestName2,
-                                                    "Target description": desc1,
-                                                    "Kinase description": desc2,
-                                                    "Peptide sequence window": peptide,
-                                                    "Intermediate nodes": path,
-                                                    "recovered": False,
-                                                    "recovery_method": "",
-                                                }
+def _select_conversion_tables(dlr: dict[str, Any], species: str, tree: str, name: str) -> tuple[Any, Any]:
+    if species == "human" and tree in ["1433", "BRCT", "WW", "PTB", "WD40", "FHA"]:
+        return dlr[species]["SH2"]["general"]["motif"], dlr[species]["SH2"]["general"]["string"]
 
-                                        else:
-                                            continue
-                                    else:
-                                        c_else+=1
-                                        # sys.stderr.write("%s %s\n" % (string1, string2))
+    tree_tables = dlr[species][tree]
+    if name in tree_tables:
+        return tree_tables[name]["motif"], tree_tables[name]["string"]
+    return tree_tables["general"]["motif"], tree_tables["general"]["string"]
 
-                                        if species == "human":
-                                            if tree in ["1433", "BRCT", "WW", "PTB", "WD40", "FHA"]:
-                                                conversion_tbl_motif = dLRConvTbl[species]["SH2"]["general"][
-                                                    "motif"]
-                                                conversion_tbl_string = dLRConvTbl[species]["SH2"]["general"]["string"]
-                                            else:
-                                                if name in dLRConvTbl[species][tree]:
-                                                    conversion_tbl_motif = dLRConvTbl[species][tree][name][
-                                                        "motif"]
-                                                    conversion_tbl_string = dLRConvTbl[species][tree][name]["string"]
-                                                else:
-                                                    conversion_tbl_motif = dLRConvTbl[species][tree]["general"][
-                                                        "motif"]
-                                                    conversion_tbl_string = dLRConvTbl[species][tree]["general"][
-                                                        "string"]
-                                        elif species == "yeast":
-                                            if name in dLRConvTbl[species][tree]:
-                                                conversion_tbl_motif = dLRConvTbl[species][tree][name][
-                                                    "motif"]
-                                                conversion_tbl_string = dLRConvTbl[species][tree][name]["string"]
-                                            else:
-                                                conversion_tbl_motif = dLRConvTbl[species][tree]["general"][
-                                                    "motif"]
-                                                conversion_tbl_string = dLRConvTbl[species][tree]["general"]["string"]
-                                        else:
-                                            raise "This species is not supported"
 
-                                        likelihood_motif = ConvertScore2L(motifScore,
-                                                                               conversion_tbl_motif)
-                                        likelihood_string = ConvertScore2L(stringScore, conversion_tbl_string)
-                                        unified_likelihood = likelihood_motif * likelihood_string
-                                        networkinScore = unified_likelihood
+def build_prediction_row(
+    target_id: str,
+    pos: int,
+    residue: str,
+    tree: str,
+    pred: str,
+    name: str,
+    peptide: str,
+    motif_score: float,
+    string1: str,
+    string2: str,
+    string_score: float,
+    path: str,
+    networkin_score: float,
+    string_alias: dict[str, str],
+    string_desc: dict[str, str],
+    recovered: bool = False,
+    recovery_method: str = "",
+) -> dict[str, Any]:
+    return {
+        "Name": target_id,
+        "Position": f"{residue}{pos}" if pos else "",
+        "Tree": tree,
+        "Motif Group": pred,
+        "Kinase/Phosphatase/Phospho-binding domain": name,
+        "NetworKIN score": round(float(networkin_score), 4),
+        "Motif probability": round(float(motif_score), 4),
+        "STRING score": round(float(string_score), 4),
+        "Target STRING ID": string1,
+        "Kinase STRING ID": string2,
+        "Target Name": string_alias.get(string1, string1),
+        "Kinase Name": string_alias.get(string2, string2),
+        "Target description": string_desc.get(string1, "notdef"),
+        "Kinase description": string_desc.get(string2, "notdef"),
+        "Peptide sequence window": peptide,
+        "Intermediate nodes": path,
+        "recovered": recovered,
+        "recovery_method": recovery_method,
+    }
 
-                                        # NetworKIN result
-                                        c_res+=1
-                                        row = {
-                                            "Name": id,
-                                            "Position": res + str(pos),
-                                            "Tree": tree,
-                                            "Motif Group": pred,
-                                            "Kinase/Phosphatase/Phospho-binding domain": name,
-                                            "NetworKIN score": float(format(networkinScore, ".4f")),
-                                            "Motif probability": float(format(motifScore, ".4f")),
-                                            "STRING score": float(format(stringScore, ".4f")),
-                                            "Target STRING ID": string1,
-                                            "Kinase STRING ID": string2,
-                                            "Target Name": bestName1,
-                                            "Kinase Name": bestName2,
-                                            "Target description": desc1,
-                                            "Kinase description": desc2,
-                                            "Peptide sequence window": peptide,
-                                            "Intermediate nodes": path,
-                                            "recovered": False,
-                                            "recovery_method": "",
-                                        }
 
-                                    if row is not None:
-                                        predictions.append(row)
+def compile_predictions(
+    config: AppConfig,
+    id_pos_tree_pred: dict[str, Any],
+    tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
+    incoming2string: dict[str, dict[str, bool]],
+    string_alias: dict[str, str],
+    string_desc: dict[str, str],
+    map_group_to_domain: dict[str, dict[str, list[str]]],
+    likelihood_dir: str,
+    fasta_path: str,
+) -> tuple[list[dict[str, Any]], PredictionStats]:
+    stats = PredictionStats()
+    predictions: list[dict[str, Any]] = []
+    unmatched_names: set[str] = set()
+    conversion_tables = load_conversion_tables(likelihood_dir, config.species_name, config.verbose)
 
-                                    if networkinScore not in score_results:
-                                        score_results[networkinScore] = []
-
-                                    score_results[networkinScore].append(row)
-                    '''               
-                    if mode == 'network':
-                        highestScore = sorted(score_results.keys(), reverse=True)[0]
-
-                        if len(score_results[highestScore]) > 1:
-                            index = random.randint(0, len(score_results[highestScore]) - 1)
-                            sys.stdout.write((score_results[highestScore][index]))
-                        else:
-                            sys.stdout.write((score_results[highestScore][0]))
-                        pass
-                    else:
-                        for score in sorted(score_results.keys(), reverse=True):
-                            sys.stdout.write("".join(score_results[score]))
-                    '''
-        else:
-            c_notmap+=1
-
-        #print('preds not mapped:')
-        #print(pred_not_mapped)
-
-        logger.warning("names not mapped: {}", len(np.unique(name_not_mapped)))
-
-    # --- False-negative recovery ---
-    # Build motif_score_dict: {(kinase_string_id, substrate_string_id): motif_score}
-    motif_score_dict = {}
-    for prot_id, pos_data in id_pos_tree_pred.items():
-        if prot_id not in incoming2string:
+    for protein_id, pos_data in id_pos_tree_pred.items():
+        stats.proteins_seen += 1
+        mapped_strings = incoming2string.get(protein_id)
+        if not mapped_strings:
+            stats.proteins_unmapped += 1
             continue
-        for string1 in incoming2string[prot_id]:
+
+        stats.proteins_mapped += 1
+        for pos, tree_data in pos_data.items():
+            for tree, pred_data in tree_data.items():
+                for pred, (residue, peptide, motif_score) in pred_data.items():
+                    allowed_names = set(map_group_to_domain.get(tree, {}).get(pred, []))
+                    for string1 in mapped_strings:
+                        neighbors = tree_pred_string_data.get(string1, {})
+                        if not neighbors:
+                            continue
+                        stats.string_targets_seen += 1
+                        for string2, edge_data in neighbors.items():
+                            stats.string_scores_seen += 1
+                            name = edge_data["_name"]
+                            string_score = edge_data["_score"]
+                            path = edge_data.get("_path", "notdef")
+
+                            if name not in allowed_names:
+                                unmatched_names.add(name)
+                                if not config.string_for_uncovered:
+                                    continue
+                                motif_likelihood = 1.0
+                                if config.species_name == "human" and tree in ["1433", "BRCT", "WW", "PTB", "WD40", "FHA"]:
+                                    string_tbl = conversion_tables[config.species_name]["SH2"]["general"]["string"]
+                                else:
+                                    string_tbl = conversion_tables[config.species_name][tree]["general"]["string"]
+                                string_likelihood = ConvertScore2L(string_score, string_tbl)
+                                networkin_score = motif_likelihood * string_likelihood
+                                stats.uncovered_branch_hits += 1
+                            else:
+                                motif_tbl, string_tbl = _select_conversion_tables(conversion_tables, config.species_name, tree, name)
+                                motif_likelihood = ConvertScore2L(motif_score, motif_tbl)
+                                string_likelihood = ConvertScore2L(string_score, string_tbl)
+                                networkin_score = motif_likelihood * string_likelihood
+                                stats.covered_branch_hits += 1
+
+                            if networkin_score < 0.02:
+                                continue
+
+                            row = build_prediction_row(
+                                target_id=protein_id,
+                                pos=pos,
+                                residue=residue,
+                                tree=tree,
+                                pred=pred,
+                                name=name,
+                                peptide=peptide,
+                                motif_score=motif_score,
+                                string1=string1,
+                                string2=string2,
+                                string_score=string_score,
+                                path=path,
+                                networkin_score=networkin_score,
+                                string_alias=string_alias,
+                                string_desc=string_desc,
+                            )
+                            predictions.append(row)
+                            stats.result_rows += 1
+
+    stats.unmatched_names = len(unmatched_names)
+    if unmatched_names:
+        logger.warning("Unmatched kinase/domain names: {}", len(unmatched_names))
+    logger.success("Compiled {} raw prediction rows", len(predictions))
+    return predictions, stats
+
+
+def recover_predictions(
+    id_pos_tree_pred: dict[str, Any],
+    incoming2string: dict[str, dict[str, bool]],
+    tree_pred_string_data: dict[str, dict[str, dict[str, Any]]],
+    string_alias: dict[str, str],
+    string_desc: dict[str, str],
+) -> list[dict[str, Any]]:
+    motif_score_dict: dict[tuple[str, str], float] = {}
+    for prot_id, pos_data in id_pos_tree_pred.items():
+        mapped_strings = incoming2string.get(prot_id)
+        if not mapped_strings:
+            continue
+        for string1 in mapped_strings:
             if string1 not in tree_pred_string_data:
                 continue
             for pos, tree_data in pos_data.items():
                 for tree, pred_data in tree_data.items():
-                    for pred_name, (res, peptide, ms) in pred_data.items():
+                    for pred_name, (res, peptide, motif_score) in pred_data.items():
                         for string2 in tree_pred_string_data[string1]:
                             key = (string2, string1)
-                            motif_score_dict[key] = max(ms, motif_score_dict.get(key, -1.0))
+                            motif_score_dict[key] = max(motif_score, motif_score_dict.get(key, -1.0))
 
-    # Build node_index and distance matrix from STRING network data.
-    # tree_pred_string_data already holds best-path STRING scores, so we use
-    # d = 1/score - 1 to convert each score to a distance without re-running
-    # Floyd–Warshall on the raw edge graph.
-    all_string_pairs = []
-    protein_ids = set()
-    for sub, kins in tree_pred_string_data.items():
+    all_pairs: list[tuple[str, str]] = []
+    protein_ids: set[str] = set()
+    for sub, kin_map in tree_pred_string_data.items():
         protein_ids.add(sub)
-        for kin in kins:
+        for kin in kin_map:
             protein_ids.add(kin)
-            all_string_pairs.append((kin, sub))
+            all_pairs.append((kin, sub))
 
     protein_list = sorted(protein_ids)
     node_index = {pid: i for i, pid in enumerate(protein_list)}
     n = len(protein_list)
-
     dist_matrix = np.full((n, n), np.inf, dtype=np.float32)
     np.fill_diagonal(dist_matrix, 0.0)
-    for sub, kins in tree_pred_string_data.items():
+
+    for sub, kin_map in tree_pred_string_data.items():
         si = node_index[sub]
-        for kin, data in kins.items():
+        for kin, data in kin_map.items():
             ki = node_index[kin]
             score = data.get("_score", 0.0)
             if score > 0:
-                d = float(1.0 / score - 1.0)
-                if d < dist_matrix[ki, si]:
-                    dist_matrix[ki, si] = d
+                dist_matrix[ki, si] = min(dist_matrix[ki, si], float(1.0 / score - 1.0))
 
-    recovered_preds = recover_false_negatives(
-        candidates=all_string_pairs,
+    recovered = recover_false_negatives(
+        candidates=all_pairs,
         dist_matrix=dist_matrix,
         node_index=node_index,
         motif_scores=motif_score_dict,
     )
 
-    for r in recovered_preds:
-        sub_id = r["substrate_uniprot"]
-        kin_id = r["kinase_id"]
-        sub_name = string_alias.get(sub_id, sub_id)
-        kin_name = string_alias.get(kin_id, kin_id)
-        sub_desc = string_desc.get(sub_id, 'notdef')
-        kin_desc = string_desc.get(kin_id, 'notdef')
-        predictions.append({
-            "Name": sub_name,
+    recovered_rows = [
+        {
+            "Name": string_alias.get(r["substrate_uniprot"], r["substrate_uniprot"]),
             "Position": "",
             "Tree": "",
             "Motif Group": "",
-            "Kinase/Phosphatase/Phospho-binding domain": kin_name,
-            "NetworKIN score": float(format(r["networkin_score"], ".4f")),
-            "Motif probability": float(format(r["motif_score"], ".4f")),
-            "STRING score": float(format(r["context_score"], ".4f")),
-            "Target STRING ID": sub_id,
-            "Kinase STRING ID": kin_id,
-            "Target Name": sub_name,
-            "Kinase Name": kin_name,
-            "Target description": sub_desc,
-            "Kinase description": kin_desc,
+            "Kinase/Phosphatase/Phospho-binding domain": string_alias.get(r["kinase_id"], r["kinase_id"]),
+            "NetworKIN score": round(float(r["networkin_score"]), 4),
+            "Motif probability": round(float(r["motif_score"]), 4),
+            "STRING score": round(float(r["context_score"]), 4),
+            "Target STRING ID": r["substrate_uniprot"],
+            "Kinase STRING ID": r["kinase_id"],
+            "Target Name": string_alias.get(r["substrate_uniprot"], r["substrate_uniprot"]),
+            "Kinase Name": string_alias.get(r["kinase_id"], r["kinase_id"]),
+            "Target description": string_desc.get(r["substrate_uniprot"], "notdef"),
+            "Kinase description": string_desc.get(r["kinase_id"], "notdef"),
             "Peptide sequence window": "",
             "Intermediate nodes": "notdef",
             "recovered": r["recovered"],
             "recovery_method": r["recovery_method"],
-        })
+        }
+        for r in recovered
+    ]
 
-    # ORIGINAL: csv.writer rows written inline
-    # NEW: write all predictions at once via output module
-    write_output(predictions, csv_filename)
-
-    return c_np,c_map,c_notmap,c_string,c_stringscore,c_if,c_else,c_res
+    logger.success("Recovered {} false-negative predictions", len(recovered_rows))
+    return recovered_rows
 
 
-# MAIN
-def Main():
-    res_dir = 'results'
-    if not os.path.exists(res_dir):
-        os.makedirs(res_dir)
+def run_pipeline(config: AppConfig) -> dict[str, Any]:
+    ensure_dirs(config.result_dir, config.temp_dir)
+    logger.header("Starting NetworKIN pipeline")
+    logger.info("Organism: {}", config.organism)
+    logger.info("FASTA: {}", config.fasta_path)
+    logger.info("Sites: {}", config.sites_path or "<all S/T/Y residues>")
 
-    tmpdir = 'tmp'
-    if not os.path.exists(tmpdir):
-        os.makedirs(tmpdir)
+    id_seq = read_fasta_file(config.fasta_path)
 
-    sys.stderr.write("Reading fasta input file\n")
-    id_seq = readFasta(fastafile)
-    if options.verbose:
-        sys.stderr.write("%s sequences loaded\n" % len(id_seq.keys()))
-
-    if sitesfile:
-        sys.stderr.write("Reading phosphosite file\n")
-        input_type = CheckInputType(sitesfile)
-        if input_type == NETWORKIN_SITE_FILE:
-            id_pos_res = readPhosphoSites(sitesfile)
-        elif input_type == PROTEOME_DISCOVERER_SITE_FILE:
-            id_pos_res = readPhosphoSitesProteomeDiscoverer(fn_fasta, sitesfile)
-        elif input_type == MAX_QUANT_DIRECT_OUTPUT_FILE:
-            id_pos_res = readPhosphoSitesMaxQuant(sitesfile)
-        elif input_type == RUNES_SITE_FILE:
-            id_pos_res = readRunessitesfile(sitesfile)
-        elif input_type == MS_MCMC_FILE:
-            id_pos_res = readMCMCssitesfile(sitesfile)
+    if config.sites_path:
+        file_type = detect_site_file_type(config.sites_path)
+        if file_type == NETWORKIN_SITE_FILE:
+            id_pos_res = read_networkin_sites(config.sites_path)
+        else:
+            raise NetworkinError("Only the basic Networkin site reader was migrated in this core refactor. Add the other adapters next.")
     else:
         id_pos_res = {}
+        logger.info("No sites file supplied; downstream scorer must enumerate all candidate S/T/Y sites")
 
-    # ORIGINAL: sites loaded exclusively from user-provided flat file (phospho.tsv / *.dat dumps).
-    # NEW: fetch live reference phosphorylation-site data from PhosphoSitePlus (7-day cache).
-    # phosphosite_df is available here for downstream enrichment or validation against id_pos_res.
-    sys.stderr.write("Fetching live phosphorylation site reference data\n")
-    phosphosite_df = fetch_phosphosite(refresh=options.refresh)  # noqa: F841
+    logger.info("Fetching live phosphorylation reference data")
+    fetch_phosphosite(refresh=config.refresh)
 
+    group_map_path = (
+        os.path.join(config.datadir, "group_human_protein_name_map.tsv")
+        if config.organism == "9606"
+        else os.path.join(config.datadir, "group_yeast_KIN.tsv")
+    )
+    map_group_to_domain = read_group_to_domain_map(group_map_path)
+    string_alias, string_desc, name_hash = read_alias_files(config.organism, config.datadir, map_group_to_domain)
+    incoming2string, string2incoming = map_peptides_to_string(config, id_pos_res, id_seq)
 
-    if organism == "9606":
-        path_group2domain_map = os.path.join(options.datadir, "group_human_protein_name_map.tsv")
-    elif organism == "4932":
-        path_group2domain_map = os.path.join(options.datadir, "group_yeast_KIN.tsv")
+    logger.info("Fetching live STRING associations for reference")
+    fetch_string_network(proteins=list(id_seq.keys()), refresh=config.refresh)
 
-    sys.stderr.write("Loading aliases and descriptions\n")
-    map_group2domain = ReadGroup2DomainMap(path_group2domain_map)
-    (string_alias, string_desc, name_hash) = readAliasFiles(args[0], options.datadir, map_group2domain);
-
-    # Default way of mapping using BLAST
-    # incoming2string, string2incoming = mapPeptides2STRING(blastDir, organism, fastafile.name, id_pos_res, id_seq, options.threads, options.datadir, options.fast, options.leave)
-    incoming2string, string2incoming = mapPeptides2STRING(blastDir, organism, fastafile.name, id_pos_res, id_seq,
-                                                          options.threads, options.datadir)
-
-
-    # Hack for random mapping to proteins
-    # incoming2string, string2incoming = mapRandom(id_seq)
-
-    # Use if a mapping file for the input can be provided
-    # incoming2string, string2incoming = mapFromFile("/home/red1/hhorn/projects2/2012_03_22_Jesper/ensmusp_ensp.tsv")
-
-    # Used if only ensembl of the same version used
-    # incoming2string, string2incoming = mapOne2one(id_seq)
-
-    # ORIGINAL: tree_pred_string_data loaded exclusively from pre-processed local gzip file:
-    #   fn_bestpath = "%s/%s.bestpath_0340_0950.v9.tsv.gz" % (os.path.join(datadir, "string_data"), organism)
-    # NEW: fetch live STRING functional association network via REST API (7-day cache).
-    # string_df (protein_a, protein_b, combined_score) is available here for downstream use.
-    # The pre-processed local file is still loaded below for the pipeline's internal scoring format.
-    sys.stderr.write("Fetching live STRING network data\n")
-    all_uniprot_ids = list(id_seq.keys())
-    string_df = fetch_string_network(proteins=all_uniprot_ids, refresh=options.refresh)  # noqa: F841
-
-    # Load the STRING network data
-    sys.stderr.write("Loading STRING network\n")
-    tree_pred_string_data = loadSTRINGdata(string2incoming, options.datadir,string_alias, options.threads)
-    # Run motif scoring
-    sys.stderr.write("Running motif scorer\n")
+    tree_pred_string_data = load_string_data(config, string2incoming, string_alias)
+    logger.info("Running motif scorer")
     id_pos_tree_pred = score_sequences(id_seq, id_pos_res)
 
-    # Writing result to STDOUT
-    sys.stderr.write("Writing results\n")
-    sys.stdout.write(
-        "#Name\tPosition\tTree\tMotif Group\tKinase/Phosphatase/Phospho-binding domain\tNetworKIN score\tMotif probability\tSTRING score\tTarget STRING ID\tKinase/Phosphatase/Phospho-binding domain STRING ID\tTarget description\tKinase/Phosphatase/Phospho-binding domain description\tTarget Name\tKinase/Phosphatase/Phospho-binding domain Name\tPeptide sequence window\tIntermediate nodes\n")
-    if options.path == "direct":
-        dir_likelihood_conversion_tbl = os.path.join(options.datadir, "likelihood_conversion_table_direct")
-    elif options.path == "indirect":
-        dir_likelihood_conversion_tbl = os.path.join(options.datadir, "likelihood_conversion_table_indirect")
-    else:
-        raise "Path information should be either direct or indirect."
-    #print(id_pos_tree_pred)
-    #c_np,c_map,c_notmap,c_string,c_res = printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string_alias, string_desc, string_names,
-    #            args[0], options.mode, dir_likelihood_conversion_tbl, map_group2domain, res_dir, fn_fasta)
-    #print(id_pos_tree_pred['SRC'][128]['KIN']['Abl_group']
-    c_np,c_map,c_notmap,c_string,c_stringscore,c_if,c_else,c_res =printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string_alias,name_hash, string_desc, args[0],
-                options.mode, dir_likelihood_conversion_tbl, map_group2domain, res_dir, fn_fasta)
+    likelihood_dir = os.path.join(
+        config.datadir,
+        "likelihood_conversion_table_direct" if config.path_mode == "direct" else "likelihood_conversion_table_indirect",
+    )
 
-    sys.stdout.write('c_np = '+str(c_np)+'\n'+'c_map = '+str(c_map)+'\n'+'c_notmap = '+str(c_notmap)+'\n'+'c_string = '+str(c_string)+'\n'+'c_stringscore = '+str(c_stringscore)+'\n'+'c_if = '+str(c_if)+'\n'+'c_else = '+str(c_else)+'\n'+'c_res = '+str(c_res)+'\n')
+    predictions, stats = compile_predictions(
+        config=config,
+        id_pos_tree_pred=id_pos_tree_pred,
+        tree_pred_string_data=tree_pred_string_data,
+        incoming2string=incoming2string,
+        string_alias=string_alias,
+        string_desc=string_desc,
+        map_group_to_domain=map_group_to_domain,
+        likelihood_dir=likelihood_dir,
+        fasta_path=config.fasta_path,
+    )
 
-    return
+    predictions.extend(
+        recover_predictions(
+            id_pos_tree_pred=id_pos_tree_pred,
+            incoming2string=incoming2string,
+            tree_pred_string_data=tree_pred_string_data,
+            string_alias=string_alias,
+            string_desc=string_desc,
+        )
+    )
 
+    final_predictions = filter_and_rank_predictions(predictions)
+    output_path = os.path.join(config.result_dir, f"{Path(config.fasta_path).name}.result.tsv")
+    write_output(final_predictions, output_path)
 
-if __name__ == '__main__':
-    # BLAST
-    try:
-        blastDir = os.environ['BLAST_PATH']
-    except:
-        blastDir = ""
-    # Binary option removed; motif scoring now uses the Python atlas scorer
+    logger.success("Wrote {} final predictions to {}", len(final_predictions), output_path)
+    logger.header("Pipeline complete")
+    for key, value in stats.as_dict().items():
+        logger.score("{} = {}", key, value)
 
-    usage = "usage: %prog [options] organism FASTA-file [sites-file]"
-    parser = OptionParser(usage=usage, version="%prog 3.0")
-    parser.add_option("-b", "--blast", dest="blast", default=blastDir,
-                      help="set the directory for the BLAST binaries (formatdb and blastall), overwrites the 'BLAST_PATH' environmental variable. [ENV: %default]")
-    parser.add_option("-m", "--mode", dest="mode", default=False,
-                      help="if set to 'network', gives only one best scoring result for each site. In case of multiple candidate kinases with the same core, the selection hapens randomly. [default: %default]")
-    parser.add_option("-p", "--path", dest="path", default="direct",
-                      help="NetworKIN uses both direct and indirect paths. Otherwise, it uses only indirect paths. [default: %default]")
-    parser.add_option("-v", "--verbose", dest="verbose", action="store_true",
-                      help="print out everything [default: %default]")
-    parser.add_option("-f", "--fast", dest="fast", default=False, action="store_true",
-                      help="Speed up by using the intermediate files of previous run [default: %default]")
-    parser.add_option("-l", "--leave", dest="leave", default=False, action="store_true",
-                      help="leave intermediate files [default: %default]")
-    parser.add_option("-u", "--uncovered", dest="string_for_uncovered", default=False, action="store_true",
-                      help="Use STRING likelihood for uncovered Kinases [default: %default]")
-    parser.add_option("-t", "--threads", dest="threads", default=1, type="int",
-                      help="number of available threads/CPUs. Also leads to less memory usage, as result files are read sequentially [default: %default]")
-    parser.add_option("--nt", dest="active_threads", default=2, type="int",
-                      help="number of active threads at a time")
-
-    parser.add_option("-c", "--compress", dest="compress", default=True,
-                      help="compress temporary result files, saves discspace [default: %default]")
-    parser.add_option("-d", "--data", dest="datadir",
-                      default=os.path.join(os.path.split(os.path.realpath(sys.argv[0]))[0], 'data'),
-                      help="location for the additional files like the pre-computed STRING network, STRING sequence database etc. [default: %default]")
-    parser.add_option("--refresh", dest="refresh", default=False, action="store_true",
-                      help="force re-download of live data (PhosphoSitePlus, STRING) even if a valid 7-day cache exists [default: %default]")
-    # if os.environ.has_key("TMPDIR"):
-    #	parser.add_option("--tmp", dest="tmpdir", default=os.environ["TMPDIR"],
-    #									help="location for the temporary files [default: %default]")
-    # else:
-    #	print >> sys.stderr, "TMPDIR environmental variable is not defined. Please define this variable or specify tmp directory by using --tmp command line option"
-    #	sys.exit()
-
-    global options
-    (options, args) = parser.parse_args()
-
-    if options.active_threads < 2:
-        parser.error("Number of active thread (--nt) is less than 2")
-    # tempfile.tempdir= options.tmpdir
-
-    # ORGANISM
-    try:
-        organism = args[0]
-    except:
-        parser.error("Organism not defined!")
-
-    # SEQUENCE FILE
-    try:
-        fn_fasta = args[1]
-        fn_blast_output = "%s.%s.blast.out" % (fn_fasta, organism)
-        fastafile = open(fn_fasta, 'r')
-    except:
-        sys.stderr.write("%s" % args)
-        parser.error("FASTA-file not defined!")
-
-    # SITES FILE
-    try:
-        sitesfile = args[2]
-    except:
-        sitesfile = False
-
-    # BLAST
-    if options.blast:
-        blastDir = options.blast
-
-    # Show runtime parameters
-    if (options.verbose):
-        sys.stderr.write(
-            '\nPredicting using parameters as follows:\nOrganism:\t%s\nFastaFile:\t%s\n' % (organism, fn_fasta))
-        sys.stderr.write('Threads:\t%s\nCompress:\t%s\n' % (options.threads, options.compress))
-        if options.string_for_uncovered:
-            sys.stderr.write("Use STRING likelihood when kinases are not covered by the motif atlas.\n")
-        if sitesfile:
-            sys.stderr.write('Sitesfile:\t%s\n' % sitesfile)
-        else:
-            sys.stderr.write('No sites-file given, predicting on all S,T,Y residues.\n')
-        if options.mode:
-            sys.stderr.write('Mode:\t\t%s\n' % options.mode)
-        sys.stderr.write("Blast dir: %s" % blastDir)
-        sys.stderr.write('\n')
-    Main()
+    return {
+        "output_path": output_path,
+        "stats": stats.as_dict(),
+        "prediction_count": len(final_predictions),
+    }

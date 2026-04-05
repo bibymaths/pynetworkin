@@ -1,0 +1,8 @@
+This project implements concepts from:
+
+Linding et al.
+"Systematic Discovery of In Vivo Phosphorylation Networks"
+Cell, 2007
+DOI: 10.1016/j.cell.2007.05.052
+
+This is an independent reimplementation and is not affiliated with or endorsed by the original authors or Elsevier.

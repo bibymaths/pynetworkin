@@ -162,16 +162,17 @@ structure and execution flow.
 
 ---
 
-## License
+This repository provides a modern reimplementation of the NetworKIN framework.
 
-See original NetworKIN licence terms. The NetworKIN algorithm is described in:
+- Original NetworKIN was described in:
+  Linding et al., Cell 2007
 
-> Linding R, Jensen LJ, Ostheimer GJ, *et al.* (2007). Systematic discovery of
-> in vivo phosphorylation networks. *Cell*, 129(7), 1415–1426.
+- This implementation:
+  - Does NOT reuse original NetworKIN source code
+  - Replaces NetPhorest with pynetphorest
+  - Uses a rewritten likelihood model
+  - Implements a new modular pipeline
 
----
+--- 
 
-## Authors
-
-Original NetworKIN: Rune Linding, Lars Juhl Jensen, Heiko Horn & Jinho Kim (2005–2013).  
-Python 3 modernisation and STRING v12 integration: see repository contributors.
+License: MIT

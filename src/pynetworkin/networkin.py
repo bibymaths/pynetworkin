@@ -195,7 +195,9 @@ def detect_site_file_type(path: str) -> int:
         return NETWORKIN_SITE_FILE
     if len(tokens) == 2:
         return PROTEOME_DISCOVERER_SITE_FILE
-    if len(tokens) > 4 and tokens[0] == "Proteins" and tokens[4] == "Leading":
+    if len(tokens) > 4 and tokens[0] == "Proteins" and (
+        tokens[4] == "Leading" or (len(tokens) > 2 and tokens[2].startswith("Leading"))
+    ):
         return MAX_QUANT_DIRECT_OUTPUT_FILE
     if len(tokens) > 1 and tokens[1] == "phospho":
         return RUNES_SITE_FILE
@@ -222,6 +224,126 @@ def read_networkin_sites(path: str) -> dict[str, dict[int, str]]:
                 ) from exc
             residue = tokens[2].strip() if len(tokens) > 2 else ""
             id_pos_res.setdefault(protein_id, {})[pos] = residue
+
+    logger.success("Loaded phosphosite assignments for {} proteins", len(id_pos_res))
+    return id_pos_res
+
+
+def read_proteome_discoverer_sites(path: str) -> dict[str, dict[int, str]]:
+    """Parse a Proteome Discoverer 2-column phosphosite file.
+
+    Each line contains a protein ID and either:
+
+    * a residue+position string such as ``"S15"`` or ``"T103"``,
+    * a plain integer position (residue defaults to ``""``), or
+    * a peptide sequence where lowercase letters mark phosphorylated
+      S/T/Y residues (position is 1-based within the peptide string).
+
+    Returns
+    -------
+    dict[str, dict[int, str]]
+        Mapping of protein ID → {1-based position: residue character}.
+    """
+    _pos_with_residue = re.compile(r"^([A-Za-z])(\d+)$")
+    id_pos_res: dict[str, dict[int, str]] = {}
+    with open(path, encoding="utf-8") as handle:
+        for line_no, raw_line in enumerate(handle, start=1):
+            line = raw_line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            if len(parts) < 2:
+                logger.warning("Skipping malformed line {} in {}", line_no, path)
+                continue
+            protein_id = parts[0].strip()
+            raw_pos = parts[1].strip()
+            if not protein_id or not raw_pos:
+                continue
+
+            m = _pos_with_residue.match(raw_pos)
+            if m:
+                # "S15" or "T103" style
+                residue = m.group(1).upper()
+                pos = int(m.group(2))
+                id_pos_res.setdefault(protein_id, {})[pos] = residue
+            elif raw_pos.isdigit():
+                # Plain integer position
+                id_pos_res.setdefault(protein_id, {})[int(raw_pos)] = ""
+            else:
+                # Peptide sequence – lowercase S/T/Y indicate phosphosites
+                for i, ch in enumerate(raw_pos):
+                    if ch in "sty":
+                        id_pos_res.setdefault(protein_id, {})[i + 1] = ch.upper()
+
+    logger.success("Loaded phosphosite assignments for {} proteins", len(id_pos_res))
+    return id_pos_res
+
+
+def read_max_quant_sites(path: str) -> dict[str, dict[int, str]]:
+    """Parse a MaxQuant phosphosite direct-output file.
+
+    The first line is a tab-separated header.  Required columns:
+
+    * ``"Proteins"``             – semicolon-separated protein IDs
+    * ``"Positions within proteins"`` – corresponding semicolon-separated positions
+
+    Optional column (residue defaults to ``""`` when absent):
+
+    * ``"Amino acid"`` – single-character residue (same for all proteins in the row)
+
+    Returns
+    -------
+    dict[str, dict[int, str]]
+        Mapping of protein ID → {1-based position: residue character}.
+    """
+    id_pos_res: dict[str, dict[int, str]] = {}
+    with open(path, encoding="utf-8") as handle:
+        header_line = handle.readline().rstrip("\n")
+        headers = header_line.split("\t")
+
+        try:
+            prot_idx = headers.index("Proteins")
+            pos_idx = headers.index("Positions within proteins")
+        except ValueError as exc:
+            raise NetworkinError(
+                f"MaxQuant file is missing a required column: {exc}"
+            ) from exc
+
+        try:
+            res_idx: int | None = headers.index("Amino acid")
+        except ValueError:
+            res_idx = None
+
+        for line_no, raw_line in enumerate(handle, start=2):
+            raw_line = raw_line.rstrip("\n")
+            if not raw_line:
+                continue
+            tokens = raw_line.split("\t")
+            if len(tokens) <= max(prot_idx, pos_idx):
+                logger.warning("Skipping malformed line {} in {}", line_no, path)
+                continue
+
+            proteins = tokens[prot_idx].split(";")
+            positions = tokens[pos_idx].split(";")
+            residue = (
+                tokens[res_idx].strip().upper()
+                if res_idx is not None and res_idx < len(tokens)
+                else ""
+            )
+
+            for prot, pos_str in zip(proteins, positions):
+                prot = prot.strip()
+                pos_str = pos_str.strip()
+                if not prot or not pos_str:
+                    continue
+                try:
+                    pos = int(pos_str)
+                except ValueError:
+                    logger.warning(
+                        "Invalid position '{}' at line {} in {}", pos_str, line_no, path
+                    )
+                    continue
+                id_pos_res.setdefault(prot, {})[pos] = residue
 
     logger.success("Loaded phosphosite assignments for {} proteins", len(id_pos_res))
     return id_pos_res
@@ -752,7 +874,12 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         file_type = detect_site_file_type(config.sites_path)
         if file_type == NETWORKIN_SITE_FILE:
             id_pos_res = read_networkin_sites(config.sites_path)
+        elif file_type == PROTEOME_DISCOVERER_SITE_FILE:
+            id_pos_res = read_proteome_discoverer_sites(config.sites_path)
+        elif file_type == MAX_QUANT_DIRECT_OUTPUT_FILE:
+            id_pos_res = read_max_quant_sites(config.sites_path)
         else:
+            # handle RUNES and MS_MCMC later...
             raise NetworkinError(
                 "Only the basic Networkin site reader was migrated in this core refactor. Add the other adapters next."
             )

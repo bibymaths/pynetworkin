@@ -2,6 +2,9 @@ import gzip
 import csv
 import shutil
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from logger import console, logger
 ### Create .links file with in the same format as old bestpath.v9
 ### needs to be executed everytime new data from string is added
 
@@ -59,10 +62,10 @@ with open(file_name, 'w', newline='') as file:
                 c+=1
         except:
             continue
-print('OG links:')
-print(og_len)
-print('after filter:')
-print(c)
+logger.info("OG links:")
+logger.info("{}", og_len)
+logger.info("After filter:")
+logger.info("{}", c)
 # Gzip the file
 with open(file_name, 'rb') as f_in:
     with gzip.open(file_name + '.gz', 'wb') as f_out:

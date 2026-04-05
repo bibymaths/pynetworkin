@@ -1,0 +1,24 @@
+name: Deposit to Zenodo
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  zenodo-deposit:
+    name: Deposit to Zenodo
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Upload to Zenodo
+        uses: megasanjay/upload-to-zenodo@v2.0.1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          zenodo_token: ${{ secrets.ZENODO_TOKEN }}
+          deposition_id: ${{ secrets.ZENODO_DEPOSITION_ID }}
+
+      - name: Report DOI
+        run: echo "Zenodo deposit complete for release ${{ github.event.release.tag_name }}"

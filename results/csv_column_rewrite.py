@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from logger import console, logger
 import pandas as pd
 
 # Read the CSV file
@@ -8,7 +12,7 @@ df = pd.read_csv(old_csv)
 
 
 df = df[pd.notna(df['Intermediate nodes'])].reset_index(drop=True)
-print(df.head)
+console.print(df.head())
 new_df = df[['Target STRING ID',
              'Position',
              'Kinase Name',
@@ -38,6 +42,6 @@ new_df['networkin_score']=new_df['networkin_score'].astype(float)
 new_df = new_df[new_df['networkin_score'] >= 0.00001]
 new_df['Iteration'] = 0
 
-print(new_df.head)
+console.print(new_df.head())
 
 new_df.to_csv(new_csv, index=False)

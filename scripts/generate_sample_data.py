@@ -23,12 +23,12 @@ Run
 from __future__ import annotations
 
 import io
-import sys
 import textwrap
 from pathlib import Path
 
 import httpx
 import pandas as pd
+from logger import console, logger
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FALLBACK_DIR = REPO_ROOT / "data" / "fallback"
@@ -140,7 +140,7 @@ def _try_omnipath_phosphosites() -> pd.DataFrame | None:
         df = df.dropna(subset=["uniprot_id"]).head(20)
         return df if not df.empty else None
     except Exception as exc:
-        print(f"  OmniPath fetch failed: {exc}", file=sys.stderr)
+        logger.warning("OmniPath fetch failed: {}", exc)
         return None
 
 
@@ -173,46 +173,46 @@ def _try_string_network() -> pd.DataFrame | None:
         df = df[["protein_a", "protein_b", "combined_score"]].head(20)
         return df if not df.empty else None
     except Exception as exc:
-        print(f"  STRING fetch failed: {exc}", file=sys.stderr)
+        logger.warning("STRING fetch failed: {}", exc)
         return None
 
 
 def generate_phosphosites() -> None:
     out = FALLBACK_DIR / "phosphosites_sample.tsv"
-    print("Generating phosphosites_sample.tsv …")
+    logger.info("Generating phosphosites_sample.tsv …")
     df = _try_omnipath_phosphosites()
     if df is not None:
-        print(f"  Fetched {len(df)} rows from OmniPath.")
+        logger.info("Fetched {} rows from OmniPath.", len(df))
     else:
-        print("  OmniPath unavailable — using curated fallback data.")
+        logger.warning("OmniPath unavailable — using curated fallback data.")
         df = pd.DataFrame(KNOWN_PHOSPHOSITES)
     df.to_csv(out, sep="\t", index=False)
-    print(f"  Written: {out}  ({len(df)} rows)")
+    logger.info("Written: {}  ({} rows)", out, len(df))
 
 
 def generate_string_network() -> None:
     out = FALLBACK_DIR / "string_sample.tsv"
-    print("Generating string_sample.tsv …")
+    logger.info("Generating string_sample.tsv …")
     df = _try_string_network()
     if df is not None:
-        print(f"  Fetched {len(df)} rows from STRING.")
+        logger.info("Fetched {} rows from STRING.", len(df))
     else:
-        print("  STRING unavailable — using curated fallback data.")
+        logger.warning("STRING unavailable — using curated fallback data.")
         df = pd.DataFrame(KNOWN_STRING_EDGES)
     df.to_csv(out, sep="\t", index=False)
-    print(f"  Written: {out}  ({len(df)} rows)")
+    logger.info("Written: {}  ({} rows)", out, len(df))
 
 
 def generate_test_fasta() -> None:
     out = FALLBACK_DIR / "test_input.fasta"
-    print("Generating test_input.fasta …")
+    logger.info("Generating test_input.fasta …")
     out.write_text(KNOWN_FASTA)
     count = KNOWN_FASTA.count(">")
-    print(f"  Written: {out}  ({count} sequences)")
+    logger.info("Written: {}  ({} sequences)", out, count)
 
 
 if __name__ == "__main__":
     generate_phosphosites()
     generate_string_network()
     generate_test_fasta()
-    print("\nAll fallback data files generated successfully.")
+    logger.success("All fallback data files generated successfully.")

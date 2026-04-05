@@ -1,6 +1,7 @@
 import sys, os, subprocess, re, tempfile, random, operator
 import platform
 from itertools import chain
+from logger import console, logger
 
 
 def myPopen(cmd):
@@ -26,7 +27,7 @@ def myPopen(cmd):
             return stdout
     except subprocess.CalledProcessError as e:
         # Handle the subprocess.CalledProcessError exception
-        print("Error: Command '{}' returned non-zero exit status {}".format(e.cmd, e.returncode))
+        logger.error("Command '{}' returned non-zero exit status {}", e.cmd, e.returncode)
         return e.output  # Return the error message
     except Exception as e:
         # Handle other exceptions
@@ -224,7 +225,7 @@ def ReadGroup2DomainMap(path_group2domain_map):
             InsertValueIntoMultiLevelDict(map_group2domain, tokens[:2], name)
         output_file.close()
     f.close()
-    print(not_mapped)
+    logger.warning("{}", not_mapped)
     return map_group2domain
 name_hash = readAliasFiles('9606','.')
 map_group2domain = ReadGroup2DomainMap("string_data/group_human_protein_name_map.tsv")

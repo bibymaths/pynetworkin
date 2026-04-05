@@ -33,13 +33,9 @@ in the given sequences.
 
 
 
-import sys, os, subprocess, re, tempfile, random, operator
-import threading
+import sys, os, subprocess, re, tempfile
 from optparse import OptionParser
-import multiprocessing
 import glob
-import csv
-from string import *
 from likelihood import ReadConversionTableBin
 from likelihood import ConvertScore2L
 from motif_scoring import score_sequences
@@ -48,9 +44,8 @@ from inputs.string_network import fetch_string_network
 from recovery import recover_false_negatives
 from output import write_output
 import platform
-from itertools import chain
 import numpy as np
-from logger import console, logger
+from logger import logger
 
 # debugging
 import time
@@ -592,7 +587,7 @@ def mapRandom(id_seq):
     string2incoming = {}
 
     stringIDs = []
-    file = open('%s/%s.protein.sequences.fa' % (datadir, organism), 'r')
+    file = open('%s/%s.protein.sequences.fa' % (options.datadir, organism), 'r')
     data = file.readlines()
     file.close()
 

@@ -22,7 +22,7 @@ Supported organisms: **human (9606)** and **yeast (4932)**.
 ## 2. Repository Map
 
 ```
-pynetworkin/
+.
 ├── NetworKIN.py                   # Main entry point (CLI + pipeline orchestration)
 ├── likelihood.py                  # Likelihood-ratio conversion table utilities
 ├── filter_sites.py                # Standalone utility: filter MS phosphosites → .tsv
@@ -190,7 +190,7 @@ CSV columns (header row written at the start):
 
 ### `NetworKIN.py`
 
-The single-file pipeline script (~450 lines). Responsibilities:
+The single-file pipeline script (~1478 lines). Responsibilities:
 - CLI argument parsing (`optparse`)
 - Input format detection and parsing
 - BLAST-based protein mapping

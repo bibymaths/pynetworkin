@@ -155,7 +155,7 @@ structure and execution flow.
 ## Data sources
 
 - **NetPhorest**: kinase-group motif models.
-  Source: `netphorest/`; original publication: [Miller *et al.*, 2008](https://doi.org/10.1016/j.celrep.2019.03.089).
+  Source: `netphorest/`; original publication: Miller *et al.*, 2008.
 - **STRING v12**: human protein interactions and sequences.
   Downloaded from [string-db.org](https://string-db.org).
 - **HGNC symbol mapping**: `HGNC_Symbol_mapping/`.

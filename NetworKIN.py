@@ -17,7 +17,7 @@ import pandas as pd
 
 from inputs.phosphosites import fetch_phosphosite
 from inputs.string_network import fetch_string_network
-from likelihood import ConvertScore2L, ReadConversionTableBin
+from likelihood import ConvertScore2L, ReadConversionTableBin, ReadConversionTableFromMemory
 from logger import logger
 from graph_scoring import filter_and_rank_predictions
 from motif_scoring import score_sequences
@@ -471,23 +471,31 @@ def _parse_string_line(
     return None
 
 
-def load_conversion_tables(dir_path: str, species: str, verbose: bool = False) -> dict[str, Any]:
-    tables: dict[str, Any] = {}
-    pattern = re.compile(r"conversion_tbl_([a-z]+)_smooth_([a-z]+)_([A-Z0-9]+)_([a-zA-Z0-9_/-]+)")
+def load_conversion_tables(parquet_path: str, species: str, verbose: bool = False) -> dict[str, Any]:
+    """Load likelihood conversion tables from a Parquet file.
 
-    for fname in glob.glob(os.path.join(dir_path, "conversion_tbl_*_smooth*")):
-        match = pattern.findall(os.path.basename(os.path.splitext(fname)[0]))
-        if not match:
-            continue
-        score_src, species_name, tree, player_name = match[0]
-        if species_name != species:
-            continue
-        score_kind = "string" if score_src == "string" else "motif"
-        conversion_tbl = ReadConversionTableBin(fname)
-        set_multilevel_value(tables, [species_name, tree, player_name, score_kind], conversion_tbl)
+    Args:
+        parquet_path: Path to the Parquet file produced by migrate_to_parquet.py.
+        species: Species name to filter on (e.g. ``"human"`` or ``"yeast"``).
+        verbose: Emit a log line for each table loaded.
+
+    Returns:
+        Nested dictionary ``tables[species][tree][player_name][score_kind]``
+        where each leaf value is a ``list[CConvEntry]`` as returned by
+        :func:`ReadConversionTableFromMemory`.
+    """
+    tables: dict[str, Any] = {}
+    df = pd.read_parquet(parquet_path)
+    species_df = df[df["species"] == species]
+
+    for row in species_df.itertuples(index=False):
+        conversion_tbl = ReadConversionTableFromMemory(row.raw_data)
+        set_multilevel_value(
+            tables, [row.species, row.tree, row.player_name, row.score_kind], conversion_tbl
+        )
         if verbose:
             logger.muted(
-                "Loaded conversion table: {} {} {} {}", species_name, tree, player_name, score_kind
+                "Loaded conversion table: {} {} {} {}", row.species, row.tree, row.player_name, row.score_kind
             )
 
     logger.success("Loaded likelihood conversion tables for species {}", species)
@@ -555,13 +563,13 @@ def compile_predictions(
     string_alias: dict[str, str],
     string_desc: dict[str, str],
     map_group_to_domain: dict[str, dict[str, list[str]]],
-    likelihood_dir: str,
+    likelihood_path: str,
     fasta_path: str,
 ) -> tuple[list[dict[str, Any]], PredictionStats]:
     stats = PredictionStats()
     predictions: list[dict[str, Any]] = []
     unmatched_names: set[str] = set()
-    conversion_tables = load_conversion_tables(likelihood_dir, config.species_name, config.verbose)
+    conversion_tables = load_conversion_tables(likelihood_path, config.species_name, config.verbose)
 
     for protein_id, pos_data in id_pos_tree_pred.items():
         stats.proteins_seen += 1
@@ -775,11 +783,11 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
     logger.info("Running motif scorer")
     id_pos_tree_pred = score_sequences(id_seq, id_pos_res)
 
-    likelihood_dir = os.path.join(
+    likelihood_path = os.path.join(
         config.datadir,
-        "likelihood_conversion_table_direct"
+        "conversion_direct.parquet"
         if config.path_mode == "direct"
-        else "likelihood_conversion_table_indirect",
+        else "conversion_indirect.parquet",
     )
 
     predictions, stats = compile_predictions(
@@ -790,7 +798,7 @@ def run_pipeline(config: AppConfig) -> dict[str, Any]:
         string_alias=string_alias,
         string_desc=string_desc,
         map_group_to_domain=map_group_to_domain,
-        likelihood_dir=likelihood_dir,
+        likelihood_path=likelihood_path,
         fasta_path=config.fasta_path,
     )
 

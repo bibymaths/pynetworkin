@@ -4,6 +4,7 @@
 # date: 2013/06/05
 #
 # --------------------------------------------------------------------------------
+import io
 import math
 
 
@@ -341,6 +342,35 @@ def ReadConversionTableBin(path_conversion_table):
     # conv_tbl.sort(key=lambda(x):x.score, reverse=True)
     conv_tbl.sort(key=lambda x: x.score, reverse=True)
 
+    return conv_tbl
+
+
+def ReadConversionTableFromMemory(raw_data: str) -> list:
+    """Parse a conversion table from an in-memory string.
+
+    Accepts the same tab/space-separated format as ReadConversionTableBin:
+    a header line followed by rows of: score lower_bound upper_bound L ...
+
+    Args:
+        raw_data: Full file content as a string (header + data rows).
+
+    Returns:
+        list[CConvEntry] sorted by score descending.
+    """
+    conv_tbl = []
+    for i, line in enumerate(io.StringIO(raw_data)):
+        if i == 0:
+            continue
+        tokens = line.split()
+        if not tokens:
+            continue
+        conv_entry = CConvEntry()
+        conv_entry.score = float(tokens[0])
+        conv_entry.score_lower_bound = float(tokens[1])
+        conv_entry.score_upper_bound = float(tokens[2])
+        conv_entry.L = float(tokens[3])
+        conv_tbl.append(conv_entry)
+    conv_tbl.sort(key=lambda x: x.score, reverse=True)
     return conv_tbl
 
 

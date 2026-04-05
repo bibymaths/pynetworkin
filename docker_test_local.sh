@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Local test harness for pynetworkin Docker setup.
 # Tests build, compose-dev (build), compose (image pull), interactive run,
-# and down — WITHOUT pushing or pulling from Docker Hub.
+# and down — WITHOUT pushing or pulling from GHCR.
 # Usage: ./docker_test_local.sh [version_tag]
 set -euo pipefail
 
@@ -9,7 +9,6 @@ IMAGE_NAME="ghcr.io/bibymaths/pynetworkin"
 VERSION="${1:-local-test}"
 FULL_TAG="${IMAGE_NAME}:${VERSION}"
 
-PASS="\033[0;32m✔\033[0m"
 PASS="\033[0;32m✔\033[0m"
 FAIL="\033[0;31m✘\033[0m"
 INFO="\033[0;34m➜\033[0m"
@@ -72,7 +71,7 @@ pass "Dev compose down cleanly"
 header "5. docker-compose.yml (image mode, local tag)"
 # Temporarily patch compose to use our local-test tag so no Hub pull happens
 TMP_COMPOSE=$(mktemp /tmp/compose-test-XXXX.yml)
-sed "s|bibymaths/pynetworkin:latest|${IMAGE_NAME}:latest-local|g" docker-compose.yml > "${TMP_COMPOSE}"
+sed "s|ghcr.io/bibymaths/pynetworkin:latest|${IMAGE_NAME}:latest-local|g" docker-compose.yml > "${TMP_COMPOSE}"
 
 info "Starting compose with local image..."
 docker compose -f "${TMP_COMPOSE}" up -d

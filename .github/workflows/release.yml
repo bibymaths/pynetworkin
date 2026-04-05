@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
   id-token: write
 
 jobs:
@@ -32,6 +33,7 @@ jobs:
 
       - name: Lint
         run: |
+          set -euo pipefail
           uv run ruff check src tests
           uv run ruff format --check src tests
 
@@ -48,7 +50,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: bibymaths/pynetworkin
+          images: ghcr.io/bibymaths/pynetworkin
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -81,4 +83,5 @@ jobs:
 
       - name: Report completion
         run: |
-          echo "PyPI publish, Docker Hub push, GitHub Release, and Zenodo deposit completed for ${GITHUB_REF_NAME}"
+          set -euo pipefail
+          echo "PyPI publish, GHCR push, GitHub Release, and Zenodo deposit completed for ${GITHUB_REF_NAME}"

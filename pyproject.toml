@@ -92,7 +92,7 @@ exclude = ["alembic/", "legacy_c/", "legacy_web/", "HGNC_Symbol_mapping/", "scri
 select = ["E","W","F","I","B","C4","UP","N","SIM","ANN","D"]
 ignore = [
   "D100","D101","D102","D103","D104","D105","E501",
-  "ANN001","ANN002","ANN201","ANN401",
+  "ANN001","ANN002","ANN101","ANN201","ANN401",
   "N802","N803","N806","N816",
 ]
 

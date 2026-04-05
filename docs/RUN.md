@@ -50,35 +50,35 @@ pip install -e ".[dev]"
 
 ### Phosphorylation sites (priority order)
 
-1. **OmniPath** (primary, public REST API)  
-   Fetched automatically from `https://omnipathdb.org/enzsub`.  
+1. **OmniPath** (primary, public REST API)
+   Fetched automatically from `https://omnipathdb.org/enzsub`.
    Requires internet access.  Cached for 7 days in `.cache/`.
 
-2. **Local PhosphoSitePlus** (manual download required)  
-   PhosphoSitePlus requires a registered account — download is not automated.  
-   1. Log in at <https://www.phosphosite.org/downloads/>  
-   2. Download `Phosphorylation_site_dataset.gz`  
+2. **Local PhosphoSitePlus** (manual download required)
+   PhosphoSitePlus requires a registered account — download is not automated.
+   1. Log in at <https://www.phosphosite.org/downloads/>
+   2. Download `Phosphorylation_site_dataset.gz`
    3. Set the path: `export NETWORKIN_PSP_LOCAL_FILE=/path/to/file.tsv`
 
-3. **Bundled fallback TSV** (always available, offline)  
-   `data/fallback/phosphosites_sample.tsv` — 20 curated human phosphosites.  
+3. **Bundled fallback TSV** (always available, offline)
+   `data/fallback/phosphosites_sample.tsv` — 20 curated human phosphosites.
    Used automatically when all live sources fail.
 
 ### STRING network (priority order)
 
-1. **Flat file** (primary, bundled with repo)  
-   `data/string_data/9606.links.v12.0.tsv.gz`  
+1. **Flat file** (primary, bundled with repo)
+   `data/string_data/9606.links.v12.0.tsv.gz`
    Override path: `export NETWORKIN_STRING_FLAT_FILE=/path/to/file.tsv.gz`
 
-2. **STRING REST API** (fallback, requires internet)  
+2. **STRING REST API** (fallback, requires internet)
    Used automatically for small queries when the flat file is unavailable.
 
-3. **Bundled sample** (offline fallback)  
+3. **Bundled sample** (offline fallback)
    `data/fallback/string_sample.tsv` — 20 curated interaction edges.
 
 ### Kinase motifs
 
-Motif scoring uses the **`pynetphorest`** Python package exclusively.  
+Motif scoring uses the **`pynetphorest`** Python package exclusively.
 No external files need to be downloaded — the package bundles all model data.
 
 ---
@@ -140,11 +140,11 @@ pynetworkin predict proteome.fasta \
 pynetworkin predict sequences.fasta --output results.tsv --format tsv
 ```
 
-Output columns:  
-`Name`, `Position`, `Tree`, `Motif Group`, `Kinase/Phosphatase/Phospho-binding domain`,  
-`NetworKIN score`, `Motif probability`, `STRING score`,  
-`Target STRING ID`, `Kinase STRING ID`, `Target Name`, `Kinase Name`,  
-`Target description`, `Kinase description`, `Peptide sequence window`,  
+Output columns:
+`Name`, `Position`, `Tree`, `Motif Group`, `Kinase/Phosphatase/Phospho-binding domain`,
+`NetworKIN score`, `Motif probability`, `STRING score`,
+`Target STRING ID`, `Kinase STRING ID`, `Target Name`, `Kinase Name`,
+`Target description`, `Kinase description`, `Peptide sequence window`,
 `Intermediate nodes`, `recovered`, `recovery_method`
 
 ### Cytoscape-compatible edge list

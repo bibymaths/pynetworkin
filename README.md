@@ -96,6 +96,7 @@ print(results["prediction_count"], "predictions written to", results["output_pat
 
 ---
 
+
 ## Input formats
 
 ### FASTA file

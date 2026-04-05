@@ -1,6 +1,6 @@
-#!/bin/bash
-# Build and start the pynetworkin Docker environment in detached mode.
-# Make executable first: chmod +x docker_up.sh
-set -e
+#!/usr/bin/env bash
+# Build and start the pynetworkin Docker service in detached mode.
+set -euo pipefail
+
 docker compose up --build -d
-echo "Container 'networkin' is running in the background."
+echo "PyNetworKIN service is running in the background."

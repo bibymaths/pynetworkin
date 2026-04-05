@@ -11,17 +11,13 @@ permissions:
 
 jobs:
   release:
-    name: Build, publish, release, and archive
+    name: Build, publish, release, archive, and push Docker image
     runs-on: ubuntu-latest
     environment: pypi
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        run: |
-          python3 --version
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -36,17 +32,44 @@ jobs:
 
       - name: Lint
         run: |
-          uv run ruff check .
-          uv run ruff format --check .
+          uv run ruff check src tests
+          uv run ruff format --check src tests
 
       - name: Test
         run: uv run pytest -v
 
-      - name: Build distributions
+      - name: Build Python distributions
         run: uv build
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: bibymaths/pynetworkin
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -64,4 +87,4 @@ jobs:
 
       - name: Report completion
         run: |
-          echo "PyPI publish, GitHub Release, and Zenodo deposit completed for ${GITHUB_REF_NAME}"
+          echo "PyPI publish, Docker Hub push, GitHub Release, and Zenodo deposit completed for ${GITHUB_REF_NAME}"

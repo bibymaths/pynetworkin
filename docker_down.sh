@@ -1,6 +1,6 @@
-#!/bin/bash
-# Stop and remove the pynetworkin Docker containers.
-# Make executable first: chmod +x docker_down.sh
-set -e
+#!/usr/bin/env bash
+# Stop and remove the pynetworkin Docker services.
+set -euo pipefail
+
 docker compose down
-echo "Container 'networkin' has been stopped and removed."
+echo "PyNetworKIN containers stopped and removed."

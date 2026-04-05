@@ -1,9 +1,7 @@
 services:
   networkin:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - .:/app
-    command: ["tail", "-f", "/dev/null"]
+    image: bibymaths/pynetworkin:latest
+    container_name: pynetworkin
     restart: unless-stopped
+    volumes:
+      - .:/work

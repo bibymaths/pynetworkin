@@ -11,23 +11,21 @@ from __future__ import annotations
 import io
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
 from pynetworkin.networkin import (
+    LEGACY_SITE_FILE,
     MAX_QUANT_DIRECT_OUTPUT_FILE,
     MS_MCMC_FILE,
     NETWORKIN_SITE_FILE,
     PROTEOME_DISCOVERER_SITE_FILE,
-    LEGACY_SITE_FILE,
     AppConfig,
     NetworkinError,
     detect_site_file_type,
     load_conversion_tables,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -156,13 +154,10 @@ def test_load_conversion_tables_sorted_descending(tmp_path: Path) -> None:
 
 def _write_site_file(content: str, suffix: str = ".tsv") -> str:
     """Write *content* to a temp file and return its path."""
-    tf = tempfile.NamedTemporaryFile(
-        mode="w", suffix=suffix, delete=False, encoding="utf-8"
-    )
-    tf.write(content)
-    tf.flush()
-    tf.close()
-    return tf.name
+    with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, encoding="utf-8") as tf:
+        tf.write(content)
+        tf.flush()
+        return tf.name
 
 
 def test_detect_networkin_site_file(tmp_path: Path) -> None:
@@ -251,5 +246,5 @@ def test_run_pipeline_raises_on_missing_fasta(tmp_path: Path) -> None:
         datadir=str(tmp_path),
         blast_dir="",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(FileNotFoundError):
         run_pipeline(cfg)

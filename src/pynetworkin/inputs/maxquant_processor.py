@@ -57,11 +57,11 @@ UNIPROT_IDMAPPING_DETAILS_URL = "https://rest.uniprot.org/idmapping/details/{job
 # that UniProt ID-mapping is no longer needed for Ensembl accessions.
 ENSEMBL_SEQUENCE_URL = "https://rest.ensembl.org/sequence/id/{id}?type=protein"
 
-UNIPROT_BATCH_SIZE = 50   # max accessions per search request
+UNIPROT_BATCH_SIZE = 50  # max accessions per search request
 MAX_RETRIES = 3
-RETRY_DELAY = 2.0          # base delay in seconds (doubles each retry)
+RETRY_DELAY = 2.0  # base delay in seconds (doubles each retry)
 IDMAPPING_POLL_INTERVAL = 2.0
-IDMAPPING_POLL_MAX = 30    # seconds before giving up on a job
+IDMAPPING_POLL_MAX = 30  # seconds before giving up on a job
 
 
 # ---------------------------------------------------------------------------
@@ -75,7 +75,7 @@ class ProteinIDInfo:
 
     original_id: str
     cleaned_id: str
-    id_type: str          # 'uniprot', 'refseq', 'ensembl', 'other'
+    id_type: str  # 'uniprot', 'refseq', 'ensembl', 'other'
     is_contaminant: bool
     is_reverse: bool
     isoform: str | None = None
@@ -331,9 +331,7 @@ class MaxQuantProcessor:
                     return None
                 resp.raise_for_status()
             except httpx.TimeoutException:
-                logger.warning(
-                    "Timeout fetching Ensembl %s (attempt %d)", ensembl_id, attempt + 1
-                )
+                logger.warning("Timeout fetching Ensembl %s (attempt %d)", ensembl_id, attempt + 1)
                 await asyncio.sleep(RETRY_DELAY * (attempt + 1))
             except httpx.HTTPStatusError as exc:
                 logger.warning("HTTP error fetching Ensembl %s: %s", ensembl_id, exc)
@@ -659,9 +657,7 @@ class MaxQuantProcessor:
             report.errors.append(msg)
 
         report.sequences_downloaded = len(sequences)
-        report.sequences_missing = [
-            cid for cid in kept if cid not in sequences
-        ]
+        report.sequences_missing = [cid for cid in kept if cid not in sequences]
 
         logger.info(
             "Downloaded %d sequences; %d missing",
@@ -709,8 +705,7 @@ class MaxQuantProcessor:
 
         # ID mapping CSV
         mapping_rows = [
-            {"original_id": orig, "cleaned_id": cleaned}
-            for orig, cleaned in mapping.items()
+            {"original_id": orig, "cleaned_id": cleaned} for orig, cleaned in mapping.items()
         ]
         mapping_df = pd.DataFrame(mapping_rows, columns=["original_id", "cleaned_id"])
         mapping_df.to_csv(mapping_path, index=False)

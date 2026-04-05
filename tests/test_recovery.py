@@ -3,7 +3,6 @@ import numpy as np
 from pynetworkin.recovery import recover_false_negatives
 
 
-
 def test_close_pair_is_recovered():
     """A pair with no motif score but a short graph distance must be recovered."""
     node_index = {"KIN_A": 0, "SUB_B": 1, "SUB_C": 2}

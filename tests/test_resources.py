@@ -18,9 +18,9 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pandas as pd
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -134,9 +134,11 @@ def test_resolve_flat_file_env_var_missing_raises(tmp_path: Path) -> None:
     """When env var points to a non-existent file, raise FileNotFoundError."""
     from pynetworkin.inputs import string_network as sn
 
-    with patch.dict(os.environ, {"NETWORKIN_STRING_FLAT_FILE": str(tmp_path / "nope.gz")}):
-        with pytest.raises(FileNotFoundError):
-            sn._resolve_flat_file()
+    with (
+        patch.dict(os.environ, {"NETWORKIN_STRING_FLAT_FILE": str(tmp_path / "nope.gz")}),
+        pytest.raises(FileNotFoundError),
+    ):
+        sn._resolve_flat_file()
 
 
 def test_resolve_flat_file_uses_cache_when_present(tmp_path: Path) -> None:
@@ -150,10 +152,11 @@ def test_resolve_flat_file_uses_cache_when_present(tmp_path: Path) -> None:
         "NETWORKIN_CACHE_DIR": str(tmp_path),
         "NETWORKIN_STRING_FLAT_FILE": "",
     }
-    with patch.dict(os.environ, env, clear=False):
-        # Reload the CACHE_DIR-derived constant used inside _resolve_flat_file
-        with patch.object(sn, "_downloaded_flat_file_path", return_value=cached):
-            result = sn._resolve_flat_file()
+    with (
+        patch.dict(os.environ, env, clear=False),
+        patch.object(sn, "_downloaded_flat_file_path", return_value=cached),
+    ):
+        result = sn._resolve_flat_file()
     assert result == cached
 
 
@@ -168,10 +171,12 @@ def test_resolve_flat_file_downloads_when_no_cache(tmp_path: Path) -> None:
         return dest
 
     env = {"NETWORKIN_STRING_FLAT_FILE": ""}
-    with patch.dict(os.environ, env, clear=False):
-        with patch.object(sn, "_downloaded_flat_file_path", return_value=tmp_path / "missing.gz"):
-            with patch.object(sn, "_download_string_flat_file", side_effect=fake_download) as mock_dl:
-                result = sn._resolve_flat_file()
+    with (
+        patch.dict(os.environ, env, clear=False),
+        patch.object(sn, "_downloaded_flat_file_path", return_value=tmp_path / "missing.gz"),
+        patch.object(sn, "_download_string_flat_file", side_effect=fake_download) as mock_dl,
+    ):
+        result = sn._resolve_flat_file()
     mock_dl.assert_called_once()
     assert result == dest
 
@@ -185,10 +190,12 @@ def test_fetch_string_network_falls_back_to_bundled_on_all_failures(tmp_path: Pa
         "NETWORKIN_STRING_FLAT_FILE": "",
     }
 
-    with patch.dict(os.environ, env, clear=False):
-        with patch.object(sn, "_resolve_flat_file", side_effect=RuntimeError("no file")):
-            with patch.object(sn, "_fetch_rest_api", side_effect=RuntimeError("no api")):
-                df = sn.fetch_string_network(proteins=["PROT1"], refresh=True)
+    with (
+        patch.dict(os.environ, env, clear=False),
+        patch.object(sn, "_resolve_flat_file", side_effect=RuntimeError("no file")),
+        patch.object(sn, "_fetch_rest_api", side_effect=RuntimeError("no api")),
+    ):
+        df = sn.fetch_string_network(proteins=["PROT1"], refresh=True)
 
     assert isinstance(df, pd.DataFrame)
     # Should match bundled fallback columns
@@ -197,16 +204,12 @@ def test_fetch_string_network_falls_back_to_bundled_on_all_failures(tmp_path: Pa
 
 def test_download_string_flat_file_atomic_rename(tmp_path: Path, monkeypatch) -> None:
     """_download_string_flat_file must use atomic rename (no partial files left)."""
-    import httpx
     from pynetworkin.inputs import string_network as sn
 
     dest = tmp_path / "string_data" / sn._STRING_CACHE_FILENAME
 
     # Build a minimal gzip payload to stream
-    import gzip as gz
-    import io
-
-    payload = gz.compress(b"protein1 protein2 combined_score\n9606.A 9606.B 500\n")
+    payload = gzip.compress(b"protein1 protein2 combined_score\n9606.A 9606.B 500\n")
 
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
@@ -229,7 +232,6 @@ def test_download_string_flat_file_atomic_rename(tmp_path: Path, monkeypatch) ->
 
 def test_download_string_flat_file_raises_on_http_error(tmp_path: Path, monkeypatch) -> None:
     """_download_string_flat_file must raise RuntimeError on HTTP failure."""
-    import httpx
     from pynetworkin.inputs import string_network as sn
 
     dest = tmp_path / "string_data" / sn._STRING_CACHE_FILENAME
@@ -242,6 +244,8 @@ def test_download_string_flat_file_raises_on_http_error(tmp_path: Path, monkeypa
     mock_response.__enter__ = MagicMock(return_value=mock_response)
     mock_response.__exit__ = MagicMock(return_value=False)
 
-    with patch("httpx.stream", return_value=mock_response):
-        with pytest.raises(RuntimeError, match="Failed to download STRING"):
-            sn._download_string_flat_file()
+    with (
+        patch("httpx.stream", return_value=mock_response),
+        pytest.raises(RuntimeError, match="Failed to download STRING"),
+    ):
+        sn._download_string_flat_file()

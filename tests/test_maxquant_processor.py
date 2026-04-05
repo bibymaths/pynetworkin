@@ -200,9 +200,7 @@ class TestProcessSiteTable:
         report = result["report"]
         assert report.errors, "Expected errors for missing file"
 
-    def test_missing_proteins_column(
-        self, processor: MaxQuantProcessor, tmp_path: Path
-    ) -> None:
+    def test_missing_proteins_column(self, processor: MaxQuantProcessor, tmp_path: Path) -> None:
         p = tmp_path / "bad.txt"
         p.write_text("Other\tColumns\nA\tB\n", encoding="utf-8")
 
@@ -212,9 +210,7 @@ class TestProcessSiteTable:
         report = result["report"]
         assert any("Proteins" in e for e in report.errors)
 
-    def test_output_files_created(
-        self, processor: MaxQuantProcessor, tmp_path: Path
-    ) -> None:
+    def test_output_files_created(self, processor: MaxQuantProcessor, tmp_path: Path) -> None:
         site_file = _make_site_table_file(tmp_path)
         out_dir = tmp_path / "out"
 
@@ -230,9 +226,7 @@ class TestProcessSiteTable:
         assert result["mapping_path"].exists()
         assert result["report_path"].exists()
 
-    def test_report_json_valid(
-        self, processor: MaxQuantProcessor, tmp_path: Path
-    ) -> None:
+    def test_report_json_valid(self, processor: MaxQuantProcessor, tmp_path: Path) -> None:
         site_file = _make_site_table_file(tmp_path)
         out_dir = tmp_path / "out"
 
@@ -297,9 +291,7 @@ class TestProcessSiteTable:
             assert "CON__" not in str(val)
             assert "REV__" not in str(val)
 
-    def test_fasta_content(
-        self, processor: MaxQuantProcessor, tmp_path: Path
-    ) -> None:
+    def test_fasta_content(self, processor: MaxQuantProcessor, tmp_path: Path) -> None:
         site_file = _make_site_table_file(tmp_path)
         out_dir = tmp_path / "out"
 
@@ -313,9 +305,7 @@ class TestProcessSiteTable:
         # _write_outputs uses the cleaned accession as the FASTA header
         assert ">P12345" in fasta_content
 
-    def test_real_sample_data(
-        self, processor: MaxQuantProcessor, tmp_path: Path
-    ) -> None:
+    def test_real_sample_data(self, processor: MaxQuantProcessor, tmp_path: Path) -> None:
         """Smoke-test with the actual sample_MQ.res file if present."""
         sample = Path(__file__).parent.parent / "data_MaxQuant_sample" / "sample_MQ.res"
         if not sample.exists():
@@ -341,49 +331,41 @@ class TestFetchSequences:
     def test_returns_fasta_for_valid_uniprot_id(self, processor: MaxQuantProcessor) -> None:
         fasta = ">sp|P12345|PROT_HUMAN\nMSEQENCELINES\n"
 
-        async def _mock_fetch_one(client, accession):
+        async def _mock_fetch_one(client, accession) -> str | None:
             return fasta
 
         with patch.object(processor, "_fetch_one_fasta", side_effect=_mock_fetch_one):
             result = asyncio.run(
-                processor.fetch_sequences_from_uniprot(
-                    ["P12345"], id_types={"P12345": "uniprot"}
-                )
+                processor.fetch_sequences_from_uniprot(["P12345"], id_types={"P12345": "uniprot"})
             )
 
         assert "P12345" in result
         assert result["P12345"] == fasta
 
     def test_returns_empty_for_failed_uniprot_id(self, processor: MaxQuantProcessor) -> None:
-        async def _mock_fetch_one(client, accession):
+        async def _mock_fetch_one(client, accession) -> None:
             return None
 
         with patch.object(processor, "_fetch_one_fasta", side_effect=_mock_fetch_one):
             result = asyncio.run(
-                processor.fetch_sequences_from_uniprot(
-                    ["INVALID"], id_types={"INVALID": "uniprot"}
-                )
+                processor.fetch_sequences_from_uniprot(["INVALID"], id_types={"INVALID": "uniprot"})
             )
 
         assert result == {}
 
-    def test_ensembl_fetched_directly_not_via_uniprot(
-        self, processor: MaxQuantProcessor
-    ) -> None:
+    def test_ensembl_fetched_directly_not_via_uniprot(self, processor: MaxQuantProcessor) -> None:
         """Ensembl IDs must use _fetch_ensembl_fasta, never _map_non_uniprot_ids."""
         fasta = ">ENSP00000123456\nMSEQENCELINES\n"
 
-        async def _mock_ensembl_fetch(client, ensembl_id):
+        async def _mock_ensembl_fetch(client, ensembl_id) -> str | None:
             return fasta
 
-        async def _mock_map(client, refseq_ids, _ensembl_ids):
+        async def _mock_map(client, refseq_ids, _ensembl_ids) -> dict:
             return {}
 
         with (
             patch.object(processor, "_fetch_ensembl_fasta", side_effect=_mock_ensembl_fetch),
-            patch.object(
-                processor, "_map_non_uniprot_ids", side_effect=_mock_map
-            ) as mock_map,
+            patch.object(processor, "_map_non_uniprot_ids", side_effect=_mock_map) as mock_map,
         ):
             result = asyncio.run(
                 processor.fetch_sequences_from_uniprot(

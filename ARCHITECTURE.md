@@ -67,8 +67,6 @@ Supported organisms: **human (9606)** and **yeast (4932)**.
 ├── cured_morpho_seqs_v2.fa        # Morpho-proteomics FASTA sequences
 ├── MS_MCMC.csv                    # Mass-spec MCMC sample data
 │
-├── README.txt                     # Original NetworKIN 3.0 installation notes
-├── README_new.txt                 # Updated notes (STRING v12, Python 3 migration)
 └── README.md                      # Project README
 ```
 
@@ -241,5 +239,5 @@ as a `SitesFile`.
 2. **`from string import *`** – broad wildcard import in `NetworKIN.py`; safe but
    not idiomatic Python 3.
 3. **STRING v12 coverage gap** – fewer STRING-backed predictions are obtained
-   with STRING v12 than v9 (see `README_new.txt`); the v9 best-path file is
+   with STRING v12 than v9; the v9 best-path file is
    still used as default.

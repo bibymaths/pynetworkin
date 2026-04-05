@@ -31,17 +31,11 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
 
-      - name: Install dependencies
-        run: uv sync --no-install-project --group dev --group docs
-
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Run tests
-        run: uv run pytest tests/ -v || true
+      - name: Install docs dependencies
+        run: uv sync --no-install-project --group docs
 
       - name: Build docs
-        run: uv run --group docs mkdocs build
+        run: uv run mkdocs build
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

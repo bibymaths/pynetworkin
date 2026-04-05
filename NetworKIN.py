@@ -46,6 +46,7 @@ from motif_scoring import score_sequences
 from inputs.phosphosites import fetch_phosphosite
 from inputs.string_network import fetch_string_network
 from recovery import recover_false_negatives
+from output import write_output
 import platform
 from itertools import chain
 import numpy as np
@@ -826,28 +827,8 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
     species = dSpeciesName[organism]
 
     fas = open(fn_fasta, 'r')
-    csv_filename = os.path.join(res_dir, f'{fas.name}.result.csv')
-    with open(csv_filename, 'w', newline='') as csvfile:
-        writer = csv.writer(csvfile, delimiter=',')
-        writer.writerow(['Name'
-                            , 'Position'
-                            , 'Tree'
-                            , 'Motif Group'
-                            , 'Kinase/Phosphatase/Phospho-binding domain'
-                            , 'NetworKIN score'
-                            , 'Motif probability'
-                            , 'STRING score'
-                            , 'Target STRING ID'
-                            , 'Kinase STRING ID'
-                            , 'Target Name'
-                            , 'Kinase Name'
-                            , 'Target description'
-                            , 'Kinase description'
-                            , 'Peptide sequence window'
-                            , 'Intermediate nodes'
-                            , 'recovered'
-                            , 'recovery_method'])
-        #writer.writerow([])
+    csv_filename = os.path.join(res_dir, f'{fas.name}.result.tsv')
+    predictions = []
 
     dLRConvTbl = {}
     for fname in glob.glob(os.path.join(dir_likelihood_conversion_tbl, "conversion_tbl_*_smooth*")):
@@ -977,11 +958,29 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
                                             networkinScore = unified_likelihood
 
                                             # NetworKIN result
+                                            row = None
                                             if networkinScore >= 0.02:
                                                 c_if += 1
-                                                result = id + '\t' + res + str(pos) + '\t' + tree + '\t' + pred + '\t' + name + '\t' + \
-                                                         format(networkinScore, ".4f") + '\t' + format(motifScore,'.4f') + '\t' + format(stringScore, '.4f') + '\t' + \
-                                                         string1 + '\t' + string2 + '\t' + bestName1 + '\t' + bestName2 + '\t' + desc1 + '\t' + desc2 + '\t' + peptide + '\t' + path
+                                                row = {
+                                                    "Name": id,
+                                                    "Position": res + str(pos),
+                                                    "Tree": tree,
+                                                    "Motif Group": pred,
+                                                    "Kinase/Phosphatase/Phospho-binding domain": name,
+                                                    "NetworKIN score": float(format(networkinScore, ".4f")),
+                                                    "Motif probability": float(format(motifScore, ".4f")),
+                                                    "STRING score": float(format(stringScore, ".4f")),
+                                                    "Target STRING ID": string1,
+                                                    "Kinase STRING ID": string2,
+                                                    "Target Name": bestName1,
+                                                    "Kinase Name": bestName2,
+                                                    "Target description": desc1,
+                                                    "Kinase description": desc2,
+                                                    "Peptide sequence window": peptide,
+                                                    "Intermediate nodes": path,
+                                                    "recovered": False,
+                                                    "recovery_method": "",
+                                                }
 
                                         else:
                                             continue
@@ -1024,19 +1023,34 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
 
                                         # NetworKIN result
                                         c_res+=1
-                                        result = id + '\t' + res + str(
-                                            pos) + '\t' + tree + '\t' + pred + '\t' + name + '\t' + \
-                                                 format(networkinScore, ".4f") + '\t' + format(motifScore,'.4f') + '\t' + format(stringScore, '.4f') + '\t' + \
-                                                 string1 + '\t' + string2 + '\t' + bestName1 + '\t' + bestName2 + '\t' + desc1 + '\t' + desc2 + '\t' + peptide + '\t' + path
+                                        row = {
+                                            "Name": id,
+                                            "Position": res + str(pos),
+                                            "Tree": tree,
+                                            "Motif Group": pred,
+                                            "Kinase/Phosphatase/Phospho-binding domain": name,
+                                            "NetworKIN score": float(format(networkinScore, ".4f")),
+                                            "Motif probability": float(format(motifScore, ".4f")),
+                                            "STRING score": float(format(stringScore, ".4f")),
+                                            "Target STRING ID": string1,
+                                            "Kinase STRING ID": string2,
+                                            "Target Name": bestName1,
+                                            "Kinase Name": bestName2,
+                                            "Target description": desc1,
+                                            "Kinase description": desc2,
+                                            "Peptide sequence window": peptide,
+                                            "Intermediate nodes": path,
+                                            "recovered": False,
+                                            "recovery_method": "",
+                                        }
 
-                                    with open(csv_filename, 'a', newline='') as csvfile:
-                                        writer = csv.writer(csvfile, delimiter=',')
-                                        writer.writerow(result.split('\t') + ['False', ''])
+                                    if row is not None:
+                                        predictions.append(row)
 
                                     if networkinScore not in score_results:
                                         score_results[networkinScore] = []
 
-                                    score_results[networkinScore].append(result)
+                                    score_results[networkinScore].append(row)
                     '''               
                     if mode == 'network':
                         highestScore = sorted(score_results.keys(), reverse=True)[0]
@@ -1111,26 +1125,37 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
         motif_scores=motif_score_dict,
     )
 
-    with open(csv_filename, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile, delimiter=',')
-        for r in recovered_preds:
-            sub_id = r["substrate_uniprot"]
-            kin_id = r["kinase_id"]
-            sub_name = string_alias.get(sub_id, sub_id)
-            kin_name = string_alias.get(kin_id, kin_id)
-            sub_desc = string_desc.get(sub_id, 'notdef')
-            kin_desc = string_desc.get(kin_id, 'notdef')
-            writer.writerow([
-                sub_name, '', '', '', kin_name,
-                format(r["networkin_score"], ".4f"),
-                format(r["motif_score"], ".4f"),
-                format(r["context_score"], ".4f"),
-                sub_id, kin_id,
-                sub_name, kin_name,
-                sub_desc, kin_desc,
-                '', 'notdef',
-                r["recovered"], r["recovery_method"],
-            ])
+    for r in recovered_preds:
+        sub_id = r["substrate_uniprot"]
+        kin_id = r["kinase_id"]
+        sub_name = string_alias.get(sub_id, sub_id)
+        kin_name = string_alias.get(kin_id, kin_id)
+        sub_desc = string_desc.get(sub_id, 'notdef')
+        kin_desc = string_desc.get(kin_id, 'notdef')
+        predictions.append({
+            "Name": sub_name,
+            "Position": "",
+            "Tree": "",
+            "Motif Group": "",
+            "Kinase/Phosphatase/Phospho-binding domain": kin_name,
+            "NetworKIN score": float(format(r["networkin_score"], ".4f")),
+            "Motif probability": float(format(r["motif_score"], ".4f")),
+            "STRING score": float(format(r["context_score"], ".4f")),
+            "Target STRING ID": sub_id,
+            "Kinase STRING ID": kin_id,
+            "Target Name": sub_name,
+            "Kinase Name": kin_name,
+            "Target description": sub_desc,
+            "Kinase description": kin_desc,
+            "Peptide sequence window": "",
+            "Intermediate nodes": "notdef",
+            "recovered": r["recovered"],
+            "recovery_method": r["recovery_method"],
+        })
+
+    # ORIGINAL: csv.writer rows written inline
+    # NEW: write all predictions at once via output module
+    write_output(predictions, csv_filename)
 
     return c_np,c_map,c_notmap,c_string,c_stringscore,c_if,c_else,c_res
 

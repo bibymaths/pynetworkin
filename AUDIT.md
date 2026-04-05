@@ -226,7 +226,15 @@
 
 ---
 
-## Live Data Migration
+## Output Migration
+
+| File | Status | Notes |
+|---|---|---|
+| `NetworKIN.py` (`printResult`) | [x] complete | Inline `csv.writer` replaced by `write_output()` from `output.py`; predictions collected as list of dicts and written at end of function |
+| `output.py` | [x] created | New module: `STANDARD_COLUMNS`, `write_tsv`, `write_cytoscape`, `write_output`; TSV replaces original comma-delimited CSV; output file renamed `.result.tsv` |
+| `tests/test_output.py` | [x] created | 7 tests: column presence, column order, recovered boolean, score range, null checks, Cytoscape format |
+
+
 
 | Stale data source | Original location | External DB | Pipeline stage | Status |
 |---|---|---|---|---|

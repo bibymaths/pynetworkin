@@ -19,6 +19,7 @@ from inputs.phosphosites import fetch_phosphosite
 from inputs.string_network import fetch_string_network
 from likelihood import ConvertScore2L, ReadConversionTableBin
 from logger import logger
+from graph_scoring import filter_and_rank_predictions
 from motif_scoring import score_sequences
 from output import write_output
 from recovery import recover_false_negatives
@@ -491,29 +492,6 @@ def load_conversion_tables(dir_path: str, species: str, verbose: bool = False) -
 
     logger.success("Loaded likelihood conversion tables for species {}", species)
     return tables
-
-
-def filter_and_rank_predictions(
-    predictions: list[dict[str, Any]],
-    min_networkin: float = 2.0,
-    min_motif: float = 0.05,
-    top_k: int = 5,
-) -> list[dict[str, Any]]:
-    df = pd.DataFrame(predictions)
-    if df.empty:
-        logger.warning("No predictions available after scoring")
-        return predictions
-
-    filtered = df[
-        (df["NetworKIN score"] > min_networkin) & (df["Motif probability"] > min_motif)
-    ].copy()
-    filtered = filtered.sort_values(
-        ["Name", "Position", "NetworKIN score"], ascending=[True, True, False]
-    )
-    filtered = filtered.groupby(["Name", "Position"], as_index=False).head(top_k)
-
-    logger.success("Retained {} predictions after ranking and filtering", len(filtered))
-    return filtered.to_dict(orient="records")
 
 
 def _select_conversion_tables(

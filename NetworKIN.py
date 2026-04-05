@@ -45,6 +45,7 @@ from likelihood import ConvertScore2L
 from motif_scoring import score_sequences
 from inputs.phosphosites import fetch_phosphosite
 from inputs.string_network import fetch_string_network
+from recovery import recover_false_negatives
 import platform
 from itertools import chain
 import numpy as np
@@ -843,7 +844,9 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
                             , 'Target description'
                             , 'Kinase description'
                             , 'Peptide sequence window'
-                            , 'Intermediate nodes'])
+                            , 'Intermediate nodes'
+                            , 'recovered'
+                            , 'recovery_method'])
         #writer.writerow([])
 
     dLRConvTbl = {}
@@ -1028,7 +1031,7 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
 
                                     with open(csv_filename, 'a', newline='') as csvfile:
                                         writer = csv.writer(csvfile, delimiter=',')
-                                        writer.writerow(result.split('\t'))
+                                        writer.writerow(result.split('\t') + ['False', ''])
 
                                     if networkinScore not in score_results:
                                         score_results[networkinScore] = []
@@ -1056,7 +1059,79 @@ def printResult(id_pos_tree_pred, tree_pred_string_data, incoming2string, string
 
         print('names not mapped:')
         print(len(np.unique(name_not_mapped)))
-        
+
+    # --- False-negative recovery ---
+    # Build motif_score_dict: {(kinase_string_id, substrate_string_id): motif_score}
+    motif_score_dict = {}
+    for prot_id, pos_data in id_pos_tree_pred.items():
+        if prot_id not in incoming2string:
+            continue
+        for string1 in incoming2string[prot_id]:
+            if string1 not in tree_pred_string_data:
+                continue
+            for pos, tree_data in pos_data.items():
+                for tree, pred_data in tree_data.items():
+                    for pred_name, (res, peptide, ms) in pred_data.items():
+                        for string2 in tree_pred_string_data[string1]:
+                            key = (string2, string1)
+                            motif_score_dict[key] = max(ms, motif_score_dict.get(key, -1.0))
+
+    # Build node_index and distance matrix from STRING network data.
+    # tree_pred_string_data already holds best-path STRING scores, so we use
+    # d = 1/score - 1 to convert each score to a distance without re-running
+    # Floyd–Warshall on the raw edge graph.
+    all_string_pairs = []
+    protein_ids = set()
+    for sub, kins in tree_pred_string_data.items():
+        protein_ids.add(sub)
+        for kin in kins:
+            protein_ids.add(kin)
+            all_string_pairs.append((kin, sub))
+
+    protein_list = sorted(protein_ids)
+    node_index = {pid: i for i, pid in enumerate(protein_list)}
+    n = len(protein_list)
+
+    dist_matrix = np.full((n, n), np.inf, dtype=np.float32)
+    np.fill_diagonal(dist_matrix, 0.0)
+    for sub, kins in tree_pred_string_data.items():
+        si = node_index[sub]
+        for kin, data in kins.items():
+            ki = node_index[kin]
+            score = data.get("_score", 0.0)
+            if score > 0:
+                d = float(1.0 / score - 1.0)
+                if d < dist_matrix[ki, si]:
+                    dist_matrix[ki, si] = d
+
+    recovered_preds = recover_false_negatives(
+        candidates=all_string_pairs,
+        dist_matrix=dist_matrix,
+        node_index=node_index,
+        motif_scores=motif_score_dict,
+    )
+
+    with open(csv_filename, 'a', newline='') as csvfile:
+        writer = csv.writer(csvfile, delimiter=',')
+        for r in recovered_preds:
+            sub_id = r["substrate_uniprot"]
+            kin_id = r["kinase_id"]
+            sub_name = string_alias.get(sub_id, sub_id)
+            kin_name = string_alias.get(kin_id, kin_id)
+            sub_desc = string_desc.get(sub_id, 'notdef')
+            kin_desc = string_desc.get(kin_id, 'notdef')
+            writer.writerow([
+                sub_name, '', '', '', kin_name,
+                format(r["networkin_score"], ".4f"),
+                format(r["motif_score"], ".4f"),
+                format(r["context_score"], ".4f"),
+                sub_id, kin_id,
+                sub_name, kin_name,
+                sub_desc, kin_desc,
+                '', 'notdef',
+                r["recovered"], r["recovery_method"],
+            ])
+
     return c_np,c_map,c_notmap,c_string,c_stringscore,c_if,c_else,c_res
 
 

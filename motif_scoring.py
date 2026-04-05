@@ -7,8 +7,6 @@ subprocess or loop is used.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
-
 from pynetphorest import core as _core
 
 # Load the atlas once at module import time; subsequent calls reuse this.
@@ -16,9 +14,9 @@ _MODELS = _core.load_atlas(None)
 
 
 def score_sequences(
-    id_seq: Dict[str, str],
-    id_pos_res: Optional[Dict[str, Dict[int, str]]] = None,
-) -> Dict[str, Dict[int, Dict[str, Dict[str, Tuple[str, str, float]]]]]:
+    id_seq: dict[str, str],
+    id_pos_res: dict[str, dict[int, str]] | None = None,
+) -> dict[str, dict[int, dict[str, dict[str, tuple[str, str, float]]]]]:
     """Score all sequences in *id_seq* against the bundled kinase motif atlas.
 
     Parameters
@@ -46,7 +44,7 @@ def score_sequences(
     if id_pos_res is None:
         id_pos_res = {}
 
-    result: Dict[str, Dict[int, Dict[str, Dict[str, Tuple[str, str, float]]]]] = {}
+    result: dict[str, dict[int, dict[str, dict[str, tuple[str, str, float]]]]] = {}
 
     for protein_id, seq in id_seq.items():
         if id_pos_res and protein_id not in id_pos_res:
@@ -72,8 +70,8 @@ def score_sequences(
                     continue
 
                 meta = model["meta"]
-                tree = meta["classifier"]   # e.g. 'KIN', 'SH2', '1433'
-                kinase = meta["kinase"]     # e.g. 'PKA_group', 'Abl_group'
+                tree = meta["classifier"]  # e.g. 'KIN', 'SH2', '1433'
+                kinase = meta["kinase"]  # e.g. 'PKA_group', 'Abl_group'
 
                 if protein_id not in result:
                     result[protein_id] = {}

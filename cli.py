@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich import box
@@ -17,11 +16,11 @@ console = Console()
 APP_NAME = "pynetworkin"
 VERSION = "0.1.0"
 
-BANNER = """
-[bold white on dark_blue]  pynetworkin v{version}  [/]
+BANNER = f"""
+[bold white on dark_blue]  pynetworkin v{VERSION}  [/]
 [dim]Kinase–substrate network prediction[/]
 [dim]Author: Abhinav Mishra[/]
-""".format(version=VERSION)
+"""
 
 app = typer.Typer(
     name=APP_NAME,
@@ -33,13 +32,19 @@ app = typer.Typer(
 
 @app.command()
 def predict(
-    input_file: Path = typer.Argument(..., help="Input FASTA or phosphosite file."),
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file path."),
+    input_file: Path = typer.Argument(..., help="Input FASTA or phosphosite file."),  # noqa: B008
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file path."),  # noqa: B008
     format: str = typer.Option("tsv", "--format", "-f", help="Output format: tsv or sif."),
     refresh: bool = typer.Option(False, "--refresh", "-r", help="Force refresh of cached data."),
-    use_kg_embedding: bool = typer.Option(False, "--use-kg-embedding", help="Use KG embedding scores."),
-    string_score: int = typer.Option(400, "--string-score", help="STRING combined score threshold (0-1000)."),
-    species: int = typer.Option(9606, "--species", help="NCBI taxonomy ID (default: 9606 = human)."),
+    use_kg_embedding: bool = typer.Option(
+        False, "--use-kg-embedding", help="Use KG embedding scores."
+    ),
+    string_score: int = typer.Option(
+        400, "--string-score", help="STRING combined score threshold (0-1000)."
+    ),
+    species: int = typer.Option(
+        9606, "--species", help="NCBI taxonomy ID (default: 9606 = human)."
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
 ) -> None:
     """[bold green]Predict[/] kinase–substrate interactions from an input file."""
@@ -54,33 +59,25 @@ def predict(
 
     t0 = time.time()
 
-    steps = [
-        ("Reading input", None),
-        ("Fetching phosphosites", None),
-        ("Fetching STRING network", None),
-        ("Motif scoring", None),
-        ("Context scoring", None),
-        ("False-negative recovery", None),
-        ("Writing output", None),
-    ]
-
     from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
     results: dict = {}
 
     with Progress(
-            SpinnerColumn(style="cyan"),
-            TextColumn("[bold cyan]{task.description}"),
-            TimeElapsedColumn(),
-            console=console,
-            transient=False,
+        SpinnerColumn(style="cyan"),
+        TextColumn("[bold cyan]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
     ) as progress:
         task = progress.add_task("Running pipeline", total=None)
 
         try:
             import csv
             import shutil
-            from NetworKIN import AppConfig, run_pipeline as core_run_pipeline
+
+            from NetworKIN import AppConfig
+            from NetworKIN import run_pipeline as core_run_pipeline
 
             del use_kg_embedding
             del string_score
@@ -152,8 +149,10 @@ def predict(
                 dst_sif.parent.mkdir(parents=True, exist_ok=True)
                 written = 0
 
-                with src_tsv.open("r", encoding="utf-8", errors="replace", newline="") as infile, \
-                        dst_sif.open("w", encoding="utf-8", newline="") as outfile:
+                with (
+                    src_tsv.open("r", encoding="utf-8", errors="replace", newline="") as infile,
+                    dst_sif.open("w", encoding="utf-8", newline="") as outfile,
+                ):
                     reader = csv.DictReader(
                         (row for row in infile if row.strip() and not row.startswith("c_")),
                         delimiter="\t",
@@ -200,7 +199,7 @@ def predict(
         except Exception as exc:
             progress.update(task, description="[bold red]Pipeline failed[/]")
             console.print(f"[bold red]Pipeline error:[/] {exc}")
-            raise typer.Exit(code=1)
+            raise typer.Exit(code=1) from exc
 
     elapsed = time.time() - t0
 
@@ -218,9 +217,9 @@ def predict(
 @app.command()
 def info() -> None:
     """Show package and runtime information."""
+    import os
     import platform
     import sys
-    import os
 
     console.print(Panel(BANNER, border_style="dark_blue", expand=False))
 
@@ -242,21 +241,25 @@ def info() -> None:
 
     try:
         import typer as _typer
+
         table.add_row("typer", _typer.__version__)
     except Exception:
         pass
     try:
         import rich as _rich
+
         table.add_row("rich", _rich.__version__)
     except Exception:
         pass
     try:
         import pandas as _pd
+
         table.add_row("pandas", _pd.__version__)
     except Exception:
         pass
     try:
         import numpy as _np
+
         table.add_row("numpy", _np.__version__)
     except Exception:
         pass

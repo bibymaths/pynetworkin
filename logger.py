@@ -5,15 +5,17 @@ from rich.theme import Theme
 # Remove default loguru handler
 _logger.remove()
 
-THEME = Theme({
-    "info": "bold cyan",
-    "success": "bold green",
-    "warning": "bold yellow",
-    "error": "bold red",
-    "header": "bold white on dark_blue",
-    "muted": "dim",
-    "score": "bold magenta",
-})
+THEME = Theme(
+    {
+        "info": "bold cyan",
+        "success": "bold green",
+        "warning": "bold yellow",
+        "error": "bold red",
+        "header": "bold white on dark_blue",
+        "muted": "dim",
+        "score": "bold magenta",
+    }
+)
 
 console = Console(theme=THEME, highlight=True)
 
@@ -25,6 +27,7 @@ _logger.add(
 )
 
 # ---- Wrapper class ----
+
 
 class Logger:
     def info(self, msg, *args):

@@ -61,14 +61,16 @@ def recover_false_negatives(
 
         c_score = float(1.0 / (1.0 + d))
         if c_score >= CONTEXT_RECOVERY_THRESHOLD:
-            recovered.append({
-                "kinase_id":         kinase_id,
-                "substrate_uniprot": substrate_id,
-                "motif_score":       -1.0,   # sentinel: motif step did not score this pair
-                "context_score":     c_score,
-                "networkin_score":   c_score,  # context-only score for recovered pairs
-                "recovered":         True,
-                "recovery_method":   "context_proximity",
-            })
+            recovered.append(
+                {
+                    "kinase_id": kinase_id,
+                    "substrate_uniprot": substrate_id,
+                    "motif_score": -1.0,  # sentinel: motif step did not score this pair
+                    "context_score": c_score,
+                    "networkin_score": c_score,  # context-only score for recovered pairs
+                    "recovered": True,
+                    "recovery_method": "context_proximity",
+                }
+            )
 
     return recovered

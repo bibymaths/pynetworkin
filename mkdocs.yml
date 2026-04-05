@@ -1,9 +1,9 @@
 site_name: pynetworkin
 site_description: "Kinase–substrate network prediction: PostgreSQL, Numba, pynetphorest, live data, false-negative recovery"
 site_author: Abhinav Mishra
-site_url: https://PLACEHOLDER.github.io/pynetworkin
-repo_url: https://github.com/PLACEHOLDER/pynetworkin
-repo_name: PLACEHOLDER/pynetworkin
+site_url: https://bibymaths.github.io/pynetworkin
+repo_url: https://github.com/bibymaths/pynetworkin
+repo_name: bibymaths/pynetworkin
 edit_uri: edit/main/docs/
 
 theme:

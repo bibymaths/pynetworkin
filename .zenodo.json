@@ -10,8 +10,8 @@
   "creators": [
     {
       "name": "Mishra, Abhinav",
-      "affiliation": "PLACEHOLDER Institution",
-      "orcid": "PLACEHOLDER"
+      "affiliation": "Independent Researcher",
+      "orcid": "0009-0005-3179-7408"
     }
   ],
   "keywords": [
@@ -39,7 +39,7 @@
       "scheme": "doi"
     },
     {
-      "identifier": "https://github.com/PLACEHOLDER/pynetworkin",
+      "identifier": "https://github.com/bibymaths/pynetworkin",
       "relation": "isSupplementTo",
       "scheme": "url"
     }

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Kinase–substrate network prediction: PostgreSQL, Numba, pynetphorest, live data, false-negative recovery"
 readme = "README.md"
 license = { file = "LICENSE" }
-authors = [{ name = "Abhinav Mishra", email = "PLACEHOLDER@email.com" }]
+authors = [{ name = "Abhinav Mishra", email = "mishraabhinav36@gmail.com" }]
 keywords = ["bioinformatics", "phosphorylation", "kinase", "network", "proteomics", "systems-biology", "netphorest", "networkin", "signalling"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -51,16 +51,36 @@ kg = ["scikit-learn>=1.5", "scipy>=1.13"]
 pynetworkin = "cli:app"
 
 [project.urls]
-Homepage = "https://github.com/PLACEHOLDER/pynetworkin"
-Documentation = "https://PLACEHOLDER.github.io/pynetworkin"
-Repository = "https://github.com/PLACEHOLDER/pynetworkin"
-"Bug Tracker" = "https://github.com/PLACEHOLDER/pynetworkin/issues"
+Homepage = "https://github.com/bibymaths/pynetworkin"
+Documentation = "https://bibymaths.github.io/pynetworkin"
+Repository = "https://github.com/bibymaths/pynetworkin"
+"Bug Tracker" = "https://github.com/bibymaths/pynetworkin/issues"
 
-[tool.uv]
-dev-dependencies = [
-  "pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.4",
-  "mypy>=1.10", "black>=24.4", "pre-commit>=3.7",
+[dependency-groups]
+dev = [
+  "pytest>=8.2",
+  "pytest-cov>=5.0",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.4",
+  "mypy>=1.10",
+  "black>=24.4",
+  "pre-commit>=3.7",
+  "ipython>=8.24",
 ]
+
+docs = [
+  "mkdocs>=1.6",
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.25",
+  "mkdocs-gen-files>=0.5",
+  "mkdocs-literate-nav>=0.6",
+  "mkdocs-section-index>=0.3",
+  "mkdocs-autorefs>=1.0",
+  "griffe>=0.45",
+]
+
+[project.optional-dependencies]
+kg = ["scikit-learn>=1.5", "scipy>=1.13"]
 
 [tool.ruff]
 target-version = "py310"

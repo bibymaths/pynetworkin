@@ -11,13 +11,13 @@ abstract: >
 authors:
   - family-names: Mishra
     given-names: Abhinav
-    orcid: "https://orcid.org/PLACEHOLDER"
-    affiliation: "PLACEHOLDER Institution"
+    orcid: "https://orcid.org/0009-0005-3179-7408"
+    affiliation: "Independent Researcher"
 version: "0.1.0"
 date-released: "2026-04-05"
 license: MIT
-repository-code: "https://github.com/PLACEHOLDER/pynetworkin"
-url: "https://PLACEHOLDER.github.io/pynetworkin"
+repository-code: "https://github.com/bibymaths/pynetworkin"
+url: "https://bibymaths.github.io/pynetworkin"
 keywords:
   - bioinformatics
   - phosphorylation

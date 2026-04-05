@@ -28,6 +28,7 @@ RUN set -eux; \
     blastn -version || { echo "ERROR: BLAST+ installation verification failed."; exit 1; }
 
 ENV PATH="/opt/blast/bin:${PATH}"
+ENV PYTHONPATH="/app/src"
 
 WORKDIR /app
 

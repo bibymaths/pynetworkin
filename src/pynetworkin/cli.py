@@ -32,30 +32,45 @@ app = typer.Typer(
 
 @app.command()
 def predict(
-    input_file: Path = typer.Argument(..., help="Input FASTA or phosphosite file."),  # noqa: B008
+    input_file: Path = typer.Argument(..., help="Input FASTA file (.fasta / .fa / .txt)."),  # noqa: B008
+    sites: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--sites",
+        "-s",
+        help=(
+            "Optional phosphosite file.  "
+            "MaxQuant direct output (.res) or "
+            "ProteomeDiscoverer peptide list (.txt).  "
+            "Format is auto-detected.  "
+            "When omitted, all S/T/Y residues in the FASTA are used."
+        ),
+    ),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output file path."),  # noqa: B008
-    format: str = typer.Option("tsv", "--format", "-f", help="Output format: tsv or sif."),
+    out_format: str = typer.Option(
+        "tsv",
+        "--format",
+        "-f",
+        help="Output format: tsv (default), cytoscape, or sif (alias for cytoscape).",
+    ),
     refresh: bool = typer.Option(False, "--refresh", "-r", help="Force refresh of cached data."),
-    use_kg_embedding: bool = typer.Option(
-        False, "--use-kg-embedding", help="Use KG embedding scores."
-    ),
-    string_score: int = typer.Option(
-        400, "--string-score", help="STRING combined score threshold (0-1000)."
-    ),
     species: int = typer.Option(
         9606, "--species", help="NCBI taxonomy ID (default: 9606 = human)."
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging."),
 ) -> None:
-    """[bold green]Predict[/] kinase–substrate interactions from an input file."""
+    """[bold green]Predict[/] kinase–substrate interactions from a FASTA (optionally with a sites file)."""
     console.print(Panel(BANNER, border_style="dark_blue", expand=False))
 
     if not input_file.exists():
         console.print(f"[bold red]Error:[/] input file not found: {input_file}")
         raise typer.Exit(code=1)
 
+    if sites is not None and not sites.exists():
+        console.print(f"[bold red]Error:[/] sites file not found: {sites}")
+        raise typer.Exit(code=1)
+
     if output is None:
-        output = input_file.with_suffix(f".networkin.{format}")
+        output = input_file.with_suffix(f".networkin.{out_format}")
 
     t0 = time.time()
 
@@ -79,22 +94,19 @@ def predict(
             from pynetworkin.networkin import AppConfig
             from pynetworkin.networkin import run_pipeline as core_run_pipeline
 
-            del use_kg_embedding
-            del string_score
-
             project_root = Path(__file__).resolve().parent.parent.parent
-            output_format = format.lower().strip()
+            output_format = out_format.lower().strip()
             final_output = output.expanduser().resolve()
 
-            if output_format not in {"tsv", "sif"}:
-                raise ValueError(f"Unsupported output format: {output_format}")
+            if output_format not in {"tsv", "sif", "cytoscape"}:
+                raise ValueError(f"Unsupported output format: {output_format!r}. Use tsv, cytoscape, or sif.")
 
             progress.update(task, description="Preparing configuration")
 
             config = AppConfig(
                 organism=str(species),
                 fasta_path=str(input_file.expanduser().resolve()),
-                sites_path=None,
+                sites_path=str(sites.expanduser().resolve()) if sites is not None else None,
                 datadir=str(project_root / "data"),
                 blast_dir=str(project_root / "bin") + "/",
                 verbose=verbose,
@@ -186,7 +198,6 @@ def predict(
                 motif_scored = total_predictions
             else:
                 motif_scored = _write_sif_from_tsv(raw_tsv, final_output)
-
             results = {
                 "total": total_predictions,
                 "motif_scored": motif_scored,

@@ -24,6 +24,6 @@ def test_pka_substrate_lrraslg():
     assert "PKA_group" in kin_scores, "PKA_group kinase model not found in KIN tree"
 
     _, _, pka_score = kin_scores["PKA_group"]
-    assert pka_score > 0.2, (
-        f"PKA_group score {pka_score:.4f} is not > 0.2 for canonical PKA substrate LRRASLG"
-    )
+    assert (
+        pka_score > 0.2
+    ), f"PKA_group score {pka_score:.4f} is not > 0.2 for canonical PKA substrate LRRASLG"

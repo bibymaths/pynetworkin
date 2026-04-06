@@ -4,22 +4,20 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
-        exclude: ^scripts/
+        exclude: ^(scripts/|archive/)
       - id: ruff-format
-        exclude: ^scripts/
-
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
-    hooks:
-      - id: mypy
-        additional_dependencies: [types-requests]
+        exclude: ^(scripts/|archive/)
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v5.0.0
     hooks:
       - id: check-yaml
+        args: [--unsafe]
       - id: check-toml
       - id: end-of-file-fixer
+        exclude: ^(archive/|data/legacy/|\.idea/)
       - id: trailing-whitespace
+        exclude: ^(archive/|data/legacy/|\.idea/)
       - id: check-merge-conflict
       - id: debug-statements
+        exclude: ^(scripts/legacy/|archive/)

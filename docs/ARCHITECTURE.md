@@ -286,4 +286,3 @@ Utility module for likelihood-ratio calibration. Provides:
 | typer / rich | CLI and progress output | |
 | loguru | Logging | |
 | pyarrow | Parquet conversion tables | |
-

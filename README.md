@@ -39,8 +39,24 @@ interaction data.
 
 ## Installation
 
+### From source
+
 ```bash
 pip install -e .
+```
+
+### Docker (GHCR)
+
+```bash
+docker pull ghcr.io/bibymaths/pynetworkin:latest
+docker run --rm -v "$(pwd):/work" ghcr.io/bibymaths/pynetworkin:latest predict /work/input.fasta
+```
+
+Or use the provided Compose file:
+
+```bash
+docker compose up -d
+docker compose exec networkin pynetworkin predict /work/input.fasta
 ```
 
 ---

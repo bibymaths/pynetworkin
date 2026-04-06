@@ -70,7 +70,7 @@ for line in f.readlines():
     string_id = line.strip()
     ensp = string_id.split('.')[1]
 
-    
+
 
 f.close()
 
@@ -85,7 +85,7 @@ for ensp, hgncs in idmap_Biomart_Ensp_HGNC.iteritems():
             for ensg in ensgs:
                 if idmap_HGNC_Ensg_HGNC.has_key(ensg):
                     hgncs_from_HGNC.update(idmap_HGNC_Ensg_HGNC.GetIds(ensg))
-                
+
             hgncs_both = hgncs.intersection(hgncs_from_HGNC)
             if len(hgncs_both) == 0:
                 if manual_map.has_key(ensp):
@@ -104,7 +104,7 @@ for ensp, hgncs in idmap_Biomart_Ensp_HGNC.iteritems():
                     idmap_final_ambiguous[ensp] = hgncs_both
             else:
                 idmap_final[ensp] = hgncs_both
-                
+
         else:
             raise "No Ensg mapped!"
     else:

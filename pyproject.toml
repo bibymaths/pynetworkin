@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pynetworkin-bio"
-version = "0.1.3"
+version = "0.1.4"
 description = "Kinase-substrate network prediction: PostgreSQL, Numba, pynetphorest, live data, false-negative recovery"
 readme = "README.md"
 license = "MIT"
@@ -49,8 +49,16 @@ dependencies = [
 [project.scripts]
 pynetworkin = "pynetworkin.cli:app"
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "data/",
+  "*.parquet",
+  "dist/",
+  ".venv/",
+]
+
 [tool.hatch.build.targets.wheel]
-packages = ["src/pynetworkin"]
+packages = ["src"]
 
 [project.urls]
 Homepage = "https://github.com/bibymaths/pynetworkin"

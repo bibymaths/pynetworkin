@@ -41,11 +41,25 @@ jobs:
       - name: Build Python distributions
         run: uv build
 
+      - name: Check if version already on PyPI
+        id: pypi_check
+        run: |
+          VERSION=$(python -c "import tomllib; f=open('pyproject.toml','rb'); d=tomllib.load(f); print(d['project']['version'])")
+          PKG="pynetworkin-bio"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://pypi.org/pypi/${PKG}/${VERSION}/json)
+          if [ "$STATUS" = "200" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Version ${VERSION} already on PyPI — skipping upload"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Publish to PyPI
+        if: steps.pypi_check.outputs.exists == 'false'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
-          skip_existing: true
+          skip-existing: true
 
       - name: Extract Docker metadata
         id: meta

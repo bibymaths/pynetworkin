@@ -5,8 +5,9 @@
   "access_right": "open",
   "license": "MIT",
   "language": "eng",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publication_date": "2026-04-06",
+  "prereserve_doi": true,
   "creators": [
     {
       "name": "Mishra, Abhinav",

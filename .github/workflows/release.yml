@@ -39,7 +39,7 @@ jobs:
         run: uv run pytest -v
 
       - name: Build Python distributions
-        run: uv build
+        run: uv build --sdist --wheel
 
       - name: Check if version already on PyPI
         id: pypi_check

@@ -1,5 +1,14 @@
 # PyNetworKIN
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19433562.svg)](https://doi.org/10.5281/zenodo.19433562)
+[![PyPI version](https://img.shields.io/pypi/v/pynetworkin-bio.svg)](https://pypi.org/project/pynetworkin-bio/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/pynetworkin-bio.svg)](https://pypi.org/project/pynetworkin-bio/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/pynetworkin-bio.svg)](https://pypi.org/project/pynetworkin-bio/)
+[![Docker Image Version](https://img.shields.io/docker/v/bibymaths/pynetworkin?label=ghcr.io&logo=docker)](https://ghcr.io/bibymaths/pynetworkin)
+[![GitHub Release](https://img.shields.io/github/v/release/bibymaths/pynetworkin)](https://github.com/bibymaths/pynetworkin/releases)
+[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/bibymaths/pynetworkin/release.yml?label=release)](https://github.com/bibymaths/pynetworkin/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/bibymaths/pynetworkin)](https://github.com/bibymaths/pynetworkin/blob/main/LICENSE)
+
 **PyNetworKIN** is a Bayesian kinase–substrate prediction pipeline for
 phosphoproteomics. It integrates sequence-motif scoring (via
 [pynetphorest](https://github.com/bibymaths/pynetphorest)) with protein-interaction context (via the

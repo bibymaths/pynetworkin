@@ -45,6 +45,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          skip_existing: true
 
       - name: Extract Docker metadata
         id: meta
@@ -64,7 +65,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}   # no extra secret needed
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -84,4 +85,4 @@ jobs:
       - name: Report completion
         run: |
           set -euo pipefail
-          echo "PyPI publish, GHCR push, GitHub Release, and Zenodo deposit completed for ${GITHUB_REF_NAME}"
+          echo "PyPI publish, GHCR push, GitHub Release completed for ${GITHUB_REF_NAME}"

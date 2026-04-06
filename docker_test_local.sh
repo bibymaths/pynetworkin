@@ -67,9 +67,9 @@ info "Tearing down dev compose..."
 docker compose -f docker-compose.dev.yml down
 pass "Dev compose down cleanly"
 
-# ── 5. docker-compose.yml — using local image (no Hub pull) ─────────────────
+# ── 5. docker-compose.yml — using local image (no GHCR pull) ────────────────
 header "5. docker-compose.yml (image mode, local tag)"
-# Temporarily patch compose to use our local-test tag so no Hub pull happens
+# Temporarily patch compose to use our local-test tag so no GHCR pull happens
 TMP_COMPOSE=$(mktemp /tmp/compose-test-XXXX.yml)
 sed "s|ghcr.io/bibymaths/pynetworkin:latest|${IMAGE_NAME}:latest-local|g" docker-compose.yml > "${TMP_COMPOSE}"
 

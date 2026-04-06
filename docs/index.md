@@ -7,7 +7,7 @@
 [![Docker Image Version](https://img.shields.io/docker/v/bibymaths/pynetworkin?label=ghcr.io&logo=docker)](https://ghcr.io/bibymaths/pynetworkin)
 [![GitHub Release](https://img.shields.io/github/v/release/bibymaths/pynetworkin)](https://github.com/bibymaths/pynetworkin/releases)
 [![GitHub Actions](https://img.shields.io/github/actions/workflow/status/bibymaths/pynetworkin/release.yml?label=release)](https://github.com/bibymaths/pynetworkin/actions/workflows/release.yml)
-[![License](https://img.shields.io/github/license/bibymaths/pynetworkin)](https://github.com/bibymaths/pynetworkin/blob/main/LICENSE) 
+[![License](https://img.shields.io/github/license/bibymaths/pynetworkin)](https://github.com/bibymaths/pynetworkin/blob/main/LICENSE)
 
 **Kinase–substrate network prediction** — a modernised implementation of the NetworKIN algorithm.
 

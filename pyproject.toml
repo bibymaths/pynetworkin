@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pynetworkin-bio"
-version = "0.1.1"
+version = "0.1.2"
 description = "Kinase-substrate network prediction: PostgreSQL, Numba, pynetphorest, live data, false-negative recovery"
 readme = "README.md"
 license = "MIT"

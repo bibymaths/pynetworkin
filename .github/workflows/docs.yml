@@ -2,11 +2,8 @@ name: Deploy Docs
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "docs/**"
-      - "mkdocs.yml"
-      - "**.py"
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
 
 permissions:

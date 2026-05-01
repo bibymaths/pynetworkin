@@ -1,9 +1,9 @@
 name: Pre-commit
 
 on:
-  pull_request:
   push:
-    branches: [main, develop]
+    tags:
+      - "v*.*.*"
 
 jobs:
   pre-commit:
